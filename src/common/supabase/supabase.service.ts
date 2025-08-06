@@ -253,35 +253,6 @@ export class SupabaseService {
   }
 
   /**
-   * Check the health of the Supabase connection
-   * @returns Promise with connection status
-   */
-  async checkConnectionHealth(): Promise<{ healthy: boolean; error?: string }> {
-    try {
-      this.logger.debug('Checking Supabase connection health');
-
-      // Try a simple query to test the connection
-      const { error } = await this.supabase
-        .from('zones')
-        .select('count')
-        .limit(1);
-
-      if (error) {
-        this.logger.warn(`Connection health check failed: ${error.message}`);
-        return { healthy: false, error: error.message };
-      }
-
-      this.logger.debug('Connection health check passed');
-      return { healthy: true };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown error';
-      this.logger.error(`Connection health check error: ${errorMessage}`);
-      return { healthy: false, error: errorMessage };
-    }
-  }
-
-  /**
    * Sign in a user with email and password
    * @param email User's email
    * @param password User's password
