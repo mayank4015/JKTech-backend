@@ -116,7 +116,6 @@ export class AuthService {
         data: {
           id: data.user.id,
           email: registerDto.email,
-          password: '', // Password is managed by Supabase
           name: registerDto.name,
           role: 'admin',
         },
