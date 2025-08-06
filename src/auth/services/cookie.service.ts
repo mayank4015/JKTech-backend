@@ -1,38 +1,48 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Response } from 'express';
 
 import { AppConfigService } from '../../config/app-config.service';
 
+/**
+ * Cookie service
+ *
+ * Centralizes cookie management for authentication
+ */
 @Injectable()
 export class CookieService {
-  constructor(private configService: AppConfigService) {}
+  private readonly logger = new Logger(CookieService.name);
 
-  setAccessTokenCookie(response: Response, token: string): void {
-    const isProduction = this.configService.isProduction();
+  constructor(private readonly configService: AppConfigService) {}
 
-    response.cookie('access_token', token, {
+  /**
+   * Set refresh token as HTTP-only cookie
+   * @param res Express response object
+   * @param refreshToken Refresh token
+   */
+  setRefreshTokenCookie(res: Response, refreshToken: string): void {
+    this.logger.debug('Setting refresh token cookie');
+
+    res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
-      maxAge: 60 * 60 * 1000, // 1 hour
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // Use 'lax' in development
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       path: '/',
     });
   }
 
-  setRefreshTokenCookie(response: Response, token: string): void {
-    const isProduction = this.configService.isProduction();
+  /**
+   * Clear refresh token cookie
+   * @param res Express response object
+   */
+  clearRefreshTokenCookie(res: Response): void {
+    this.logger.debug('Clearing refresh token cookie');
 
-    response.cookie('refresh_token', token, {
+    res.clearCookie('refresh_token', {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? 'strict' : 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      path: '/auth/refresh',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax', // Use 'lax' in development
+      path: '/',
     });
-  }
-
-  clearAuthCookies(response: Response): void {
-    response.clearCookie('access_token', { path: '/' });
-    response.clearCookie('refresh_token', { path: '/auth/refresh' });
   }
 }

@@ -1,9 +1,42 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+/**
+ * Application configuration interface
+ */
+export interface AuthConfig {
+  jwtSecret: string;
+  jwtExpiresIn: string;
+  refreshTokenExpiresIn: string;
+}
+
 @Injectable()
 export class AppConfigService {
   constructor(private configService: ConfigService) {}
+
+  /**
+   * Get authentication configuration
+   */
+  get auth(): AuthConfig {
+    return {
+      jwtSecret: this.getString(
+        'JWT_SECRET',
+        'default_jwt_secret_for_development',
+      ),
+      jwtExpiresIn: this.getString('JWT_EXPIRES_IN', '1d'),
+      refreshTokenExpiresIn: this.getString('REFRESH_TOKEN_EXPIRES_IN', '7d'),
+    };
+  }
+
+  /**
+   * Get a string value from configuration
+   * @param key Configuration key
+   * @param defaultValue Default value if key is not found
+   */
+  private getString(key: string, defaultValue: string = ''): string {
+    const value = this.configService.get<string>(key);
+    return value ?? defaultValue;
+  }
 
   // Server Configuration
   getPort(): number {

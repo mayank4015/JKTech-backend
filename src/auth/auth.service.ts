@@ -10,6 +10,8 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { LoggerService } from '../common/logger/logger.service';
 import { SupabaseService } from '../common/supabase/supabase.service';
 import { UserProfileService } from './services/user-profile.service';
+import { AuthTokens, JwtPayload, UserData } from './types/auth.types';
+import { AppConfigService } from '../config/app-config.service';
 
 @Injectable()
 export class AuthService {
@@ -18,12 +20,13 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly logger: LoggerService,
     private readonly supabaseService: SupabaseService,
+    private readonly configService: AppConfigService,
     private readonly userProfileService: UserProfileService,
   ) {}
 
-  async validateUser(email: string, password: string): Promise<User | null> {
+  async login(email: string, password: string) {
     try {
-      // Use Supabase for authentication
+      // Use Supabase for authentication directly
       const { data, error } = await this.supabaseService.signIn(
         email,
         password,
@@ -34,7 +37,7 @@ export class AuthService {
           email,
           error: error?.message,
         });
-        return null;
+        throw new UnauthorizedException('Invalid credentials');
       }
 
       // Get user from our database using Supabase user ID
@@ -42,45 +45,38 @@ export class AuthService {
         where: { id: data.user.id },
       });
 
-      return user;
+      if (!user) {
+        throw new UnauthorizedException('User not found in database');
+      }
+
+      if (!user.isActive) {
+        throw new UnauthorizedException('Account is deactivated');
+      }
+
+      // Get full user profile data
+      const userProfile = await this.userProfileService.getUserProfile(user.id);
+
+      // Generate tokens using the same method as register
+      const tokens = await this.generateTokens({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      });
+
+      this.logger.logTrace('User login successful', {
+        userId: user.id,
+        email: user.email,
+      });
+
+      return {
+        ...tokens,
+        user: userProfile,
+      };
     } catch (error) {
       this.logger.logError(error, AuthService.name, { email });
-      return null;
+      throw error;
     }
-  }
-
-  async login(email: string, password: string) {
-    const user = await this.validateUser(email, password);
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
-    }
-
-    // Get full user profile data
-    const userProfile = await this.userProfileService.getUserProfile(user.id);
-
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-      isActive: user.isActive,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-    };
-
-    const accessToken = this.jwtService.sign(payload);
-
-    this.logger.logTrace('User login', { userId: user.id, email: user.email });
-
-    return {
-      accessToken,
-      user: userProfile,
-    };
   }
 
   async register(registerDto: {
@@ -131,13 +127,20 @@ export class AuthService {
         email: user.email,
       });
 
+      const basicUserData = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      };
+
+      // Generate tokens
+      const tokens = await this.generateTokens(basicUserData);
+      this.logger.debug(`Registration successful for user: ${user.email}`);
+
       return {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        },
+        ...tokens,
+        user: basicUserData,
         message: 'Registration successful',
       };
     } catch (error) {
@@ -146,6 +149,40 @@ export class AuthService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Generate JWT tokens for authentication
+   * @param userData User data to include in tokens
+   * @returns Access and refresh tokens
+   */
+  async generateTokens(userData: UserData): Promise<AuthTokens> {
+    // Create the payload
+    const payload: JwtPayload = {
+      sub: userData.id,
+      email: userData.email,
+      role: userData.role || 'admin',
+      name: userData.name,
+    };
+
+    this.logger.debug(`Generating tokens for user: ${userData.id}`);
+
+    // Generate tokens in parallel
+    const [accessToken, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.auth.jwtSecret,
+        expiresIn: this.configService.auth.jwtExpiresIn,
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.configService.auth.jwtSecret,
+        expiresIn: this.configService.auth.refreshTokenExpiresIn,
+      }),
+    ]);
+
+    return {
+      accessToken,
+      refreshToken,
+    };
   }
 
   async logout(): Promise<{ message: string }> {

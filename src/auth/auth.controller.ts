@@ -12,10 +12,14 @@ import { User } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
 import { GetUser } from './decorators/get-user.decorator';
+import { CookieService } from './services/cookie.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly cookieService: CookieService,
+  ) {}
 
   @Public()
   @Post('login')
@@ -29,26 +33,38 @@ export class AuthController {
       loginDto.password,
     );
 
-    // Set HTTP-only cookie
-    response.cookie('access_token', result.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 60 * 60 * 1000, // 1 hour
-    });
+    // Set refresh token cookie
+    if (result.refreshToken) {
+      this.cookieService.setRefreshTokenCookie(response, result.refreshToken);
+    }
 
-    return {
-      user: result.user,
-      message: 'Login successful',
-    };
+    // Return access token and user data (but not the refresh token)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { refreshToken: _, ...responseData } = result;
+    return responseData;
   }
 
   @Public()
   @Post('register')
+  @HttpCode(HttpStatus.CREATED)
   async register(
     @Body() registerDto: { email: string; password: string; name: string },
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.authService.register(registerDto);
+    const result = await this.authService.register(registerDto);
+
+    // Check if the result has a refreshToken property
+    if ('refreshToken' in result) {
+      // Set refresh token cookie
+      this.cookieService.setRefreshTokenCookie(response, result.refreshToken);
+
+      // Return access token and user data (but not the refresh token)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { refreshToken: _, ...responseData } = result;
+      return responseData;
+    }
+
+    return result;
   }
 
   @Post('logout')
@@ -57,8 +73,8 @@ export class AuthController {
     // Call Supabase logout
     const result = await this.authService.logout();
 
-    // Clear HTTP-only cookie
-    response.clearCookie('access_token');
+    // Clear HTTP-only cookies
+    this.cookieService.clearRefreshTokenCookie(response);
 
     return result;
   }
