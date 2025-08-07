@@ -23,23 +23,20 @@ export class AccessControlService {
       ],
     },
     {
-      role: Role.MODERATOR,
+      role: Role.EDITOR,
       permissions: [
         { resource: 'users', action: 'read' },
-        { resource: 'users', action: 'update' },
-        { resource: 'posts', action: '*' },
-        { resource: 'comments', action: '*' },
+        { resource: 'documents', action: '*' },
+        { resource: 'profile', action: 'read' },
+        { resource: 'profile', action: 'update' },
       ],
     },
     {
-      role: Role.USER,
+      role: Role.VIEWER,
       permissions: [
+        { resource: 'documents', action: 'read' },
         { resource: 'profile', action: 'read' },
         { resource: 'profile', action: 'update' },
-        { resource: 'posts', action: 'create' },
-        { resource: 'posts', action: 'read' },
-        { resource: 'comments', action: 'create' },
-        { resource: 'comments', action: 'read' },
       ],
     },
   ];
@@ -132,11 +129,11 @@ export class AccessControlService {
     return user?.role === Role.ADMIN && user.isActive;
   }
 
-  isModerator(user: User): boolean {
-    return user?.role === Role.MODERATOR && user.isActive;
+  isEditor(user: User): boolean {
+    return user?.role === Role.EDITOR && user.isActive;
   }
 
-  isUser(user: User): boolean {
-    return user?.role === Role.USER && user.isActive;
+  isViewer(user: User): boolean {
+    return user?.role === Role.VIEWER && user.isActive;
   }
 }

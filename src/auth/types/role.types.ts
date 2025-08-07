@@ -1,7 +1,7 @@
 export enum Role {
   ADMIN = 'admin',
-  USER = 'user',
-  MODERATOR = 'moderator',
+  EDITOR = 'editor',
+  VIEWER = 'viewer',
 }
 
 export type RoleType = keyof typeof Role;

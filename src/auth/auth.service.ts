@@ -79,15 +79,30 @@ export class AuthService {
     }
   }
 
-  async register(registerDto: {
-    email: string;
-    password: string;
-    name: string;
-  }) {
+  /**
+   * Create a new user in both Supabase and our database
+   * @param userData User data for creation
+   * @param options Creation options
+   * @returns Created user data
+   */
+  async createUser(
+    userData: {
+      email: string;
+      password: string;
+      name: string;
+      role?: 'admin' | 'editor' | 'viewer';
+    },
+    options: {
+      generateTokens?: boolean;
+      createdByAdmin?: boolean;
+    } = {},
+  ) {
+    const { generateTokens = false, createdByAdmin = false } = options;
+
     try {
       // Check if user already exists in our database
       const existingUser = await this.prisma.user.findUnique({
-        where: { email: registerDto.email },
+        where: { email: userData.email },
       });
 
       if (existingUser) {
@@ -96,34 +111,39 @@ export class AuthService {
 
       // Register user with Supabase
       const { data, error } = await this.supabaseService.signUp(
-        registerDto.email,
-        registerDto.password,
-        { name: registerDto.name },
+        userData.email,
+        userData.password,
+        { name: userData.name },
       );
 
       if (error || !data.user) {
         const errorToLog = error
           ? new Error(error.message)
-          : new Error('Registration failed - no user data returned');
+          : new Error('User creation failed - no user data returned');
         this.logger.logError(errorToLog, AuthService.name, {
-          email: registerDto.email,
+          email: userData.email,
         });
-        throw new ConflictException(error?.message || 'Registration failed');
+        throw new ConflictException(error?.message || 'User creation failed');
       }
+
+      // Determine role based on context
+      const userRole = userData.role || (createdByAdmin ? 'editor' : 'admin');
 
       // Create user in our database with Supabase user ID
       const user = await this.prisma.user.create({
         data: {
           id: data.user.id,
-          email: registerDto.email,
-          name: registerDto.name,
-          role: 'admin',
+          email: userData.email,
+          name: userData.name,
+          role: userRole,
+          isActive: !createdByAdmin, // Users created by admin start as inactive
         },
       });
 
-      this.logger.logTrace('User registration', {
+      this.logger.logTrace('User created', {
         userId: user.id,
         email: user.email,
+        createdByAdmin,
       });
 
       const basicUserData = {
@@ -133,21 +153,34 @@ export class AuthService {
         role: user.role,
       };
 
-      // Generate tokens
-      const tokens = await this.generateTokens(basicUserData);
-      this.logger.debug(`Registration successful for user: ${user.email}`);
+      // Generate tokens if requested
+      if (generateTokens) {
+        const tokens = await this.generateTokens(basicUserData);
+        return {
+          ...tokens,
+          user: basicUserData,
+          message: 'User created successfully',
+        };
+      }
 
       return {
-        ...tokens,
         user: basicUserData,
-        message: 'Registration successful',
+        message: 'User created successfully',
       };
     } catch (error) {
       this.logger.logError(error, AuthService.name, {
-        email: registerDto.email,
+        email: userData.email,
       });
       throw error;
     }
+  }
+
+  async register(registerDto: {
+    email: string;
+    password: string;
+    name: string;
+  }) {
+    return this.createUser(registerDto, { generateTokens: true });
   }
 
   /**

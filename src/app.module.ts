@@ -13,6 +13,7 @@ import { FileUploadModule } from './common/file-upload/file-upload.module';
 import { AccessControlModule } from './common/access-control/access-control.module';
 import { SupabaseModule } from './common/supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 import { HealthModule } from './health/health.module';
 import { ProvidersModule } from './common/providers/providers.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
@@ -53,6 +54,7 @@ import { ThrottlerExceptionFilter } from './common/rate-limit/throttler-exceptio
 
     // Feature modules
     AuthModule,
+    UsersModule,
     HealthModule,
   ],
   controllers: [AppController],
