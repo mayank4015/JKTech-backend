@@ -14,6 +14,8 @@ import { AccessControlModule } from './common/access-control/access-control.modu
 import { SupabaseModule } from './common/supabase/supabase.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { DocumentsModule } from './documents/documents.module';
+import { IngestionsModule } from './ingestions/ingestions.module';
 import { HealthModule } from './health/health.module';
 import { ProvidersModule } from './common/providers/providers.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
@@ -55,6 +57,8 @@ import { ThrottlerExceptionFilter } from './common/rate-limit/throttler-exceptio
     // Feature modules
     AuthModule,
     UsersModule,
+    DocumentsModule,
+    IngestionsModule,
     HealthModule,
   ],
   controllers: [AppController],

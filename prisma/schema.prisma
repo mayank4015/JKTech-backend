@@ -18,5 +18,52 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  // Relations
+  documents  Document[]
+  ingestions Ingestion[]
+
   @@map("users")
+}
+
+model Document {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String   @db.VarChar(500)
+  description String?  @db.Text
+  fileName    String   @db.VarChar(255) @map("file_name")
+  fileUrl     String   @db.VarChar(1000) @map("file_url")
+  fileType    String   @db.VarChar(100) @map("file_type")
+  fileSize    BigInt   @map("file_size")
+  uploadedBy  String   @db.Uuid @map("uploaded_by")
+  status      String   @db.VarChar(50) @default("pending") // pending, processed, failed
+  tags        String[] @default([])
+  category    String?  @db.VarChar(100)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  uploader   User        @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  ingestions Ingestion[]
+
+  @@map("documents")
+}
+
+model Ingestion {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  documentId   String    @db.Uuid @map("document_id")
+  userId       String    @db.Uuid @map("user_id")
+  status       String    @db.VarChar(50) @default("queued") // queued, processing, completed, failed
+  progress     Int       @default(0) // 0-100
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  error        String?   @db.Text
+  config       Json?     // Processing configuration
+  logs         Json?     // Processing logs
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ingestions")
 }

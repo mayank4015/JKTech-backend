@@ -7,7 +7,6 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
-import { Multer } from 'multer';
 import { Readable } from 'stream';
 
 // Constants
@@ -100,7 +99,10 @@ export class FileUploadService {
   /**
    * Validate file type, size, and content
    */
-  private validateFile(file: Multer.File, allowedTypes: string[]): void {
+  private validateFile(
+    file: Express.Multer.File,
+    allowedTypes: string[],
+  ): void {
     if (!allowedTypes.includes(file.mimetype)) {
       throw new BadRequestException(
         `Invalid file type. Only ${allowedTypes.join(', ')} files are allowed.`,
@@ -119,7 +121,7 @@ export class FileUploadService {
   }
 
   async uploadFile(
-    file: Multer.File,
+    file: Express.Multer.File,
     folder: string,
     allowedTypes: string[] = DEFAULT_ALLOWED_TYPES,
   ): Promise<FileUploadResult> {
