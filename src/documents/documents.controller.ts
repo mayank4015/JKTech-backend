@@ -63,13 +63,17 @@ export class DocumentsController {
   async getDocuments(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-    @Query() filters: DocumentFiltersDto,
+    @Query() allQuery: any,
     @GetUser() user: User,
   ) {
+    // Extract filters by excluding pagination parameters
+    const { page: _, limit: __, ...filters } = allQuery;
+    const filtersDto = new DocumentFiltersDto();
+    Object.assign(filtersDto, filters);
     const result = await this.documentsService.getDocuments(
       page,
       limit,
-      filters,
+      filtersDto,
       user.id,
       user.role,
     );
@@ -77,6 +81,22 @@ export class DocumentsController {
     return {
       success: true,
       data: result,
+    };
+  }
+
+  @Get('stats')
+  async getDocumentStats(@GetUser() user: User) {
+    const result = await this.documentsService.getDocuments(
+      1,
+      1,
+      {},
+      user.id,
+      user.role,
+    );
+
+    return {
+      success: true,
+      data: result.stats,
     };
   }
 
@@ -150,12 +170,16 @@ export class DocumentsController {
   async getAllDocuments(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-    @Query() filters: DocumentFiltersDto,
+    @Query() allQuery: any,
   ) {
+    // Extract filters by excluding pagination parameters
+    const { page: _, limit: __, ...filters } = allQuery;
+    const filtersDto = new DocumentFiltersDto();
+    Object.assign(filtersDto, filters);
     const result = await this.documentsService.getDocuments(
       page,
       limit,
-      filters,
+      filtersDto,
       undefined,
       'admin',
     );
