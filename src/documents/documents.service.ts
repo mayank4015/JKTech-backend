@@ -13,6 +13,11 @@ import {
   serializeDocuments,
 } from '../common/utils/bigint-serializer.util';
 import {
+  transformDocumentForFrontend,
+  transformDocumentsForFrontend,
+  FrontendDocument,
+} from '../common/utils/document-transformer.util';
+import {
   CreateDocumentDto,
   UpdateDocumentDto,
   DocumentFiltersDto,
@@ -34,11 +39,11 @@ export interface DocumentStats {
   processed: number;
   pending: number;
   failed: number;
-  totalSize: string;
+  totalSize: number;
 }
 
 export interface PaginatedDocuments {
-  documents: DocumentWithUploader[];
+  documents: FrontendDocument[];
   pagination: {
     total: number;
     page: number;
@@ -60,7 +65,7 @@ export class DocumentsService {
     file: Express.Multer.File,
     createDocumentDto: CreateDocumentDto,
     userId: string,
-  ): Promise<DocumentWithUploader> {
+  ): Promise<FrontendDocument> {
     this.logger.debug(
       `Uploading document: ${createDocumentDto.title} by user: ${userId}`,
     );
@@ -125,7 +130,8 @@ export class DocumentsService {
       });
 
       this.logger.debug(`Document uploaded successfully: ${document.id}`);
-      return serializeDocument(document);
+      const serializedDocument = serializeDocument(document);
+      return transformDocumentForFrontend(serializedDocument);
     } catch (error) {
       this.logger.error(
         `Failed to upload document: ${error.message}`,
@@ -180,13 +186,13 @@ export class DocumentsService {
     }
 
     // Date range filter
-    if (filters.startDate || filters.endDate) {
+    if (filters.dateStart || filters.dateEnd) {
       where.createdAt = {};
-      if (filters.startDate) {
-        where.createdAt.gte = new Date(filters.startDate);
+      if (filters.dateStart) {
+        where.createdAt.gte = new Date(filters.dateStart);
       }
-      if (filters.endDate) {
-        where.createdAt.lte = new Date(filters.endDate);
+      if (filters.dateEnd) {
+        where.createdAt.lte = new Date(filters.dateEnd);
       }
     }
 
@@ -239,8 +245,12 @@ export class DocumentsService {
       this.getDocumentStats(where),
     ]);
 
+    const serializedDocuments = serializeDocuments(documents);
+    const transformedDocuments =
+      transformDocumentsForFrontend(serializedDocuments);
+
     return {
-      documents: serializeDocuments(documents),
+      documents: transformedDocuments,
       pagination: {
         total,
         page,
@@ -255,7 +265,7 @@ export class DocumentsService {
     id: string,
     userId?: string,
     userRole?: string,
-  ): Promise<DocumentWithUploader> {
+  ): Promise<FrontendDocument> {
     const document = await this.prisma.document.findUnique({
       where: { id },
       include: {
@@ -290,7 +300,8 @@ export class DocumentsService {
       throw new ForbiddenException('Access denied to this document');
     }
 
-    return serializeDocument(document);
+    const serializedDocument = serializeDocument(document);
+    return transformDocumentForFrontend(serializedDocument);
   }
 
   async updateDocument(
@@ -298,7 +309,7 @@ export class DocumentsService {
     updateDocumentDto: UpdateDocumentDto,
     userId?: string,
     userRole?: string,
-  ): Promise<DocumentWithUploader> {
+  ): Promise<FrontendDocument> {
     const existingDocument = await this.prisma.document.findUnique({
       where: { id },
     });
@@ -330,7 +341,8 @@ export class DocumentsService {
     });
 
     this.logger.debug(`Document updated: ${id}`);
-    return serializeDocument(updatedDocument);
+    const serializedDocument = serializeDocument(updatedDocument);
+    return transformDocumentForFrontend(serializedDocument);
   }
 
   async deleteDocument(
@@ -381,7 +393,7 @@ export class DocumentsService {
     id: string,
     userId?: string,
     userRole?: string,
-  ): Promise<{ document: DocumentWithUploader; ingestionId: string }> {
+  ): Promise<{ document: FrontendDocument; ingestionId: string }> {
     const document = await this.prisma.document.findUnique({
       where: { id },
     });
@@ -425,8 +437,9 @@ export class DocumentsService {
       });
 
       this.logger.debug(`Document queued for reprocessing: ${id}`);
+      const serializedDocument = serializeDocument(updatedDocument);
       return {
-        document: serializeDocument(updatedDocument),
+        document: transformDocumentForFrontend(serializedDocument),
         ingestionId: ingestion.id,
       };
     } catch (error) {
@@ -461,7 +474,10 @@ export class DocumentsService {
       processed: 0,
       pending: 0,
       failed: 0,
-      totalSize: (totalStats._sum.fileSize || BigInt(0)).toString(),
+      totalSize: parseInt(
+        (totalStats._sum.fileSize || BigInt(0)).toString(),
+        10,
+      ),
     };
 
     statusStats.forEach((stat) => {

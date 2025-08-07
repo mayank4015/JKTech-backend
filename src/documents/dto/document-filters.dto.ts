@@ -56,11 +56,11 @@ export class DocumentFiltersDto {
 
   @IsOptional()
   @IsDateString()
-  startDate?: string;
+  dateStart?: string;
 
   @IsOptional()
   @IsDateString()
-  endDate?: string;
+  dateEnd?: string;
 
   @IsOptional()
   @IsEnum(DocumentSortBy)
