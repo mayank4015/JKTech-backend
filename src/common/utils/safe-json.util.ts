@@ -1,13 +1,36 @@
+type SerializableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SerializableObject
+  | SerializableArray
+  | Error
+  | Date
+  | RegExp
+  | symbol
+  | bigint
+  | Function
+  | Record<string, unknown>
+  | unknown[];
+
+interface SerializableObject {
+  [key: string]: SerializableValue;
+}
+
+interface SerializableArray extends Array<SerializableValue> {}
+
 /**
  * Safely stringify objects, handling circular references and errors
  */
-export function safeStringify(obj: any, space?: number): string {
-  const seen = new WeakSet();
+export function safeStringify(obj: SerializableValue, space?: number): string {
+  const seen = new WeakSet<object>();
 
   try {
     return JSON.stringify(
       obj,
-      (key, value) => {
+      (key: string, value: SerializableValue) => {
         // Handle circular references
         if (typeof value === 'object' && value !== null) {
           if (seen.has(value)) {
@@ -22,10 +45,13 @@ export function safeStringify(obj: any, space?: number): string {
             name: value.name,
             message: value.message,
             stack: value.stack,
-            ...Object.getOwnPropertyNames(value).reduce((acc, prop) => {
-              acc[prop] = value[prop];
-              return acc;
-            }, {}),
+            ...Object.getOwnPropertyNames(value).reduce(
+              (acc: Record<string, unknown>, prop: string) => {
+                acc[prop] = (value as unknown as Record<string, unknown>)[prop];
+                return acc;
+              },
+              {},
+            ),
           };
         }
 
@@ -61,18 +87,37 @@ export function safeStringify(obj: any, space?: number): string {
 /**
  * Safely parse JSON strings
  */
-export function safeParse(str: string): any {
+export function safeParse<T = unknown>(str: string): T | null {
   try {
-    return JSON.parse(str);
+    return JSON.parse(str) as T;
   } catch {
     return null;
   }
 }
 
+type SanitizableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SanitizableObject
+  | SanitizableArray
+  | Date
+  | RegExp
+  | Record<string, unknown>
+  | unknown[];
+
+interface SanitizableObject {
+  [key: string]: SanitizableValue;
+}
+
+interface SanitizableArray extends Array<SanitizableValue> {}
+
 /**
  * Prepare object for safe logging by removing sensitive data
  */
-export function sanitizeForLogging(obj: any): any {
+export function sanitizeForLogging<T extends SanitizableValue>(obj: T): T {
   const sensitiveKeys = [
     'password',
     'token',
@@ -81,19 +126,19 @@ export function sanitizeForLogging(obj: any): any {
     'authorization',
     'cookie',
     'session',
-  ];
+  ] as const;
 
-  const sanitize = (value: any): any => {
+  const sanitize = <U extends SanitizableValue>(value: U): U => {
     if (value === null || value === undefined) {
       return value;
     }
 
     if (Array.isArray(value)) {
-      return value.map(sanitize);
+      return value.map(sanitize) as U;
     }
 
-    if (typeof value === 'object') {
-      const sanitized = {};
+    if (typeof value === 'object' && value.constructor === Object) {
+      const sanitized: Record<string, SanitizableValue> = {};
       for (const [key, val] of Object.entries(value)) {
         const lowerKey = key.toLowerCase();
         if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {
@@ -102,7 +147,7 @@ export function sanitizeForLogging(obj: any): any {
           sanitized[key] = sanitize(val);
         }
       }
-      return sanitized;
+      return sanitized as U;
     }
 
     return value;

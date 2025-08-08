@@ -24,7 +24,7 @@ export interface FilterOptions {
 export class QueryBuilder {
   static buildPaginationQuery(options: PaginationOptions = {}) {
     const page = Math.max(1, options.page || 1);
-    const limit = Math.min(100, Math.max(1, options.limit || 10));
+    const limit = Math.min(100, Math.max(1, options.limit ?? 10));
     const skip = (page - 1) * limit;
 
     const orderBy = options.sortBy
@@ -122,14 +122,14 @@ export class QueryBuilder {
   }
 
   static buildSearchQuery(searchTerm: string, searchFields: string[]): any {
-    if (!searchTerm || !searchFields.length) {
+    if (!searchTerm || !searchTerm.trim() || !searchFields.length) {
       return {};
     }
 
     return {
       OR: searchFields.map((field) => ({
         [field]: {
-          contains: searchTerm,
+          contains: searchTerm.trim(),
           mode: 'insensitive',
         },
       })),
