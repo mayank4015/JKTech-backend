@@ -52,7 +52,7 @@ export function serializeDocument<T extends { fileSize?: bigint | string }>(
   document: T,
 ): T & { fileSize: string } {
   if (!document) {
-    return { fileSize: 'undefined' } as T & { fileSize: string };
+    return { fileSize: '0' } as T & { fileSize: string };
   }
 
   return {
@@ -60,7 +60,7 @@ export function serializeDocument<T extends { fileSize?: bigint | string }>(
     fileSize:
       typeof document.fileSize === 'bigint'
         ? document.fileSize.toString()
-        : document.fileSize?.toString() || 'undefined',
+        : document.fileSize?.toString() || '0',
   };
 }
 
@@ -70,6 +70,10 @@ export function serializeDocument<T extends { fileSize?: bigint | string }>(
 export function serializeDocuments<T extends { fileSize?: bigint | string }>(
   documents: T[],
 ): (T & { fileSize: string })[] {
+  if (!documents || !Array.isArray(documents)) {
+    return [];
+  }
+
   return documents
     .filter((doc) => doc !== null && doc !== undefined)
     .map(serializeDocument);

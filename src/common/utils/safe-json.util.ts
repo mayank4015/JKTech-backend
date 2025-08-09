@@ -1,36 +1,13 @@
-type SerializableValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | SerializableObject
-  | SerializableArray
-  | Error
-  | Date
-  | RegExp
-  | symbol
-  | bigint
-  | Function
-  | Record<string, unknown>
-  | unknown[];
-
-interface SerializableObject {
-  [key: string]: SerializableValue;
-}
-
-interface SerializableArray extends Array<SerializableValue> {}
-
 /**
  * Safely stringify objects, handling circular references and errors
  */
-export function safeStringify(obj: SerializableValue, space?: number): string {
+export function safeStringify(obj: unknown, space?: number): string {
   const seen = new WeakSet<object>();
 
   try {
     return JSON.stringify(
       obj,
-      (key: string, value: SerializableValue) => {
+      (key: string, value: unknown) => {
         // Handle circular references
         if (typeof value === 'object' && value !== null) {
           if (seen.has(value)) {
@@ -95,29 +72,10 @@ export function safeParse<T = unknown>(str: string): T | null {
   }
 }
 
-type SanitizableValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | SanitizableObject
-  | SanitizableArray
-  | Date
-  | RegExp
-  | Record<string, unknown>
-  | unknown[];
-
-interface SanitizableObject {
-  [key: string]: SanitizableValue;
-}
-
-interface SanitizableArray extends Array<SanitizableValue> {}
-
 /**
  * Prepare object for safe logging by removing sensitive data
  */
-export function sanitizeForLogging<T extends SanitizableValue>(obj: T): T {
+export function sanitizeForLogging<T>(obj: T): T {
   const sensitiveKeys = [
     'password',
     'token',
@@ -128,7 +86,7 @@ export function sanitizeForLogging<T extends SanitizableValue>(obj: T): T {
     'session',
   ] as const;
 
-  const sanitize = <U extends SanitizableValue>(value: U): U => {
+  const sanitize = <U>(value: U): U => {
     if (value === null || value === undefined) {
       return value;
     }
@@ -138,7 +96,7 @@ export function sanitizeForLogging<T extends SanitizableValue>(obj: T): T {
     }
 
     if (typeof value === 'object' && value.constructor === Object) {
-      const sanitized: Record<string, SanitizableValue> = {};
+      const sanitized: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(value)) {
         const lowerKey = key.toLowerCase();
         if (sensitiveKeys.some((sensitive) => lowerKey.includes(sensitive))) {

@@ -233,7 +233,7 @@ describe('BigInt Serializer Utility', () => {
           id: 'doc-1',
           title: 'Test Document',
           fileName: 'test.pdf',
-          fileSize: 'undefined',
+          fileSize: '0',
         });
       });
 
@@ -302,7 +302,7 @@ describe('BigInt Serializer Utility', () => {
 
         const result = serializeDocument(document);
         expect(result).toEqual({
-          fileSize: 'undefined',
+          fileSize: '0',
         });
       });
     });
@@ -369,7 +369,7 @@ describe('BigInt Serializer Utility', () => {
           },
           {
             id: 'doc-3',
-            fileSize: 'undefined',
+            fileSize: '0',
           },
         ]);
       });

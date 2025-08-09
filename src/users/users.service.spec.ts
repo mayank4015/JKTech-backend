@@ -49,11 +49,12 @@ describe('UsersService', () => {
   let authService: DeepMockProxy<AuthService>;
   let prismaService: DeepMockProxy<PrismaService>;
   let loggerService: DeepMockProxy<LoggerService>;
+  let module: TestingModule;
 
   // Test data is now imported from test-fixtures/user-test-data.ts
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+  beforeAll(async () => {
+    module = await Test.createTestingModule({
       providers: [
         UsersService,
         {
@@ -77,8 +78,12 @@ describe('UsersService', () => {
     loggerService = module.get(LoggerService);
   });
 
-  afterEach(() => {
+  beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterAll(async () => {
+    await module.close();
   });
 
   describe('createUserByAdmin', () => {

@@ -19,6 +19,7 @@ import {
 describe('UsersController', () => {
   let controller: UsersController;
   let usersService: DeepMockProxy<UsersService>;
+  let module: TestingModule;
 
   // Test data is now imported from test-fixtures/user-test-data.ts
 
@@ -31,8 +32,8 @@ describe('UsersController', () => {
     canActivate: jest.fn().mockReturnValue(true),
   };
 
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+  beforeAll(async () => {
+    module = await Test.createTestingModule({
       controllers: [UsersController],
       providers: [
         {
@@ -51,8 +52,12 @@ describe('UsersController', () => {
     usersService = module.get(UsersService);
   });
 
-  afterEach(() => {
+  beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterAll(async () => {
+    await module.close();
   });
 
   describe('createUser', () => {
