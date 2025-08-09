@@ -1,5 +1,65 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { z } from 'zod';
+
+/**
+ * Environment validation schemas
+ */
+const baseEnvSchema = z.object({
+  // Server Configuration
+  PORT: z.coerce.number().min(1).max(65535).default(8080),
+  FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+  NODE_ENV: z
+    .enum(['development', 'production', 'test'])
+    .default('development'),
+
+  // Database Configuration
+  DATABASE_URL: z.string().min(1, 'Database URL is required'),
+  DIRECT_URL: z.string().min(1, 'Direct URL is required'),
+  DB_MAX_RETRIES: z.coerce.number().min(1).default(3),
+  DB_RETRY_DELAY: z.coerce.number().min(100).default(1000),
+  DB_MAX_RETRY_DELAY: z.coerce.number().min(1000).default(10000),
+  DB_CONNECTION_TIMEOUT: z.coerce.number().min(5000).default(30000),
+
+  // JWT Configuration
+  JWT_SECRET: z.string().min(1, 'JWT Secret is required'),
+  JWT_EXPIRES_IN: z.string().default('1h'),
+  REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
+
+  // Supabase Configuration
+  SUPABASE_URL: z.string().url('Invalid Supabase URL'),
+  SUPABASE_KEY: z.string().min(1, 'Supabase key is required'),
+  SUPABASE_SERVICE_KEY: z.string().min(1, 'Supabase service key is required'),
+
+  // Rate Limiting Configuration
+  THROTTLE_TTL: z.coerce.number().min(1).default(60),
+  THROTTLE_LIMIT: z.coerce.number().min(1).default(10),
+
+  // OAuth Configuration (Optional)
+  GOOGLE_OAUTH_REDIRECT_URL: z.string().url().optional(),
+
+  // S3 Configuration (Optional for file uploads)
+  S3_BUCKET_NAME: z.string().optional(),
+  S3_REGION: z.string().default('us-east-1'),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_ENDPOINT: z.string().url().optional(),
+});
+
+// Production-specific validation
+const productionEnvSchema = baseEnvSchema.extend({
+  JWT_SECRET: z
+    .string()
+    .min(32, 'JWT Secret must be at least 32 characters in production')
+    .refine(
+      (val) => !val.includes('default') && !val.includes('change'),
+      'JWT Secret must not contain default values in production',
+    ),
+  NODE_ENV: z.literal('production'),
+});
+
+// Development-specific validation
+const developmentEnvSchema = baseEnvSchema;
 
 /**
  * Application configuration interface
@@ -10,147 +70,340 @@ export interface AuthConfig {
   refreshTokenExpiresIn: string;
 }
 
+export interface ValidatedConfig {
+  server: {
+    port: number;
+    frontendUrl: string;
+    nodeEnv: string;
+    isProduction: boolean;
+    isDevelopment: boolean;
+  };
+  database: {
+    url: string;
+    directUrl: string;
+    maxRetries: number;
+    retryDelay: number;
+    maxRetryDelay: number;
+    connectionTimeout: number;
+  };
+  auth: {
+    jwtSecret: string;
+    jwtExpiresIn: string;
+    refreshTokenExpiresIn: string;
+  };
+  supabase: {
+    url: string;
+    key: string;
+    serviceKey: string;
+  };
+  s3: {
+    bucketName?: string;
+    region: string;
+    accessKeyId?: string;
+    secretAccessKey?: string;
+    endpoint?: string;
+  };
+  oauth: {
+    googleRedirectUrl?: string;
+  };
+  rateLimit: {
+    ttl: number;
+    limit: number;
+  };
+}
+
 @Injectable()
-export class AppConfigService {
+export class AppConfigService implements OnModuleInit {
+  private readonly logger = new Logger(AppConfigService.name);
+  private validatedConfig: ValidatedConfig;
+
   constructor(private configService: ConfigService) {}
 
+  async onModuleInit() {
+    if (!this.validatedConfig) {
+      this.logger.log('🔍 Validating environment configuration...');
+      this.validatedConfig = this.validateEnvironmentSync();
+      this.logger.log('✅ Environment configuration validated successfully');
+    }
+  }
+
   /**
-   * Get authentication configuration
+   * Validate environment variables based on NODE_ENV
    */
-  get auth(): AuthConfig {
+  private validateEnvironmentSync(): ValidatedConfig {
+    const rawEnv = this.getRawEnvironmentVariables();
+    const nodeEnv = rawEnv.NODE_ENV || 'development';
+
+    try {
+      let validatedEnv: z.infer<typeof baseEnvSchema>;
+
+      if (nodeEnv === 'production') {
+        this.logger.log('🏭 Validating production environment...');
+        validatedEnv = productionEnvSchema.parse(rawEnv);
+        this.validateProductionSecurity(validatedEnv);
+      } else {
+        this.logger.log('🛠️ Validating development environment...');
+        validatedEnv = developmentEnvSchema.parse(rawEnv);
+      }
+
+      return this.transformToValidatedConfig(validatedEnv);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errorMessages = error.issues.map(
+          (err) => `${err.path.join('.')}: ${err.message}`,
+        );
+        this.logger.error('❌ Environment validation failed:');
+        errorMessages.forEach((msg) => this.logger.error(`  - ${msg}`));
+        throw new Error(
+          `Environment validation failed:\n${errorMessages.join('\n')}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Additional production security validations
+   */
+  private validateProductionSecurity(env: any): void {
+    const securityIssues: string[] = [];
+
+    // Check for weak JWT secrets
+    if (env.JWT_SECRET.length < 64) {
+      securityIssues.push(
+        'JWT_SECRET should be at least 64 characters in production',
+      );
+    }
+
+    // Check for default database passwords
+    if (
+      env.DATABASE_URL.includes('password') ||
+      env.DATABASE_URL.includes('123456')
+    ) {
+      securityIssues.push('DATABASE_URL appears to contain a weak password');
+    }
+
+    // Check HTTPS requirements
+    if (!env.FRONTEND_URL.startsWith('https://')) {
+      securityIssues.push('FRONTEND_URL should use HTTPS in production');
+    }
+
+    if (securityIssues.length > 0) {
+      this.logger.warn('⚠️ Production security warnings:');
+      securityIssues.forEach((issue) => this.logger.warn(`  - ${issue}`));
+    }
+  }
+
+  /**
+   * Get raw environment variables
+   */
+  private getRawEnvironmentVariables(): Record<string, any> {
     return {
-      jwtSecret: this.getString(
-        'JWT_SECRET',
-        'default_jwt_secret_for_development',
+      PORT: this.configService.get('PORT'),
+      FRONTEND_URL: this.configService.get('FRONTEND_URL'),
+      NODE_ENV: this.configService.get('NODE_ENV'),
+      DATABASE_URL: this.configService.get('DATABASE_URL'),
+      DIRECT_URL: this.configService.get('DIRECT_URL'),
+      DB_MAX_RETRIES: this.configService.get('DB_MAX_RETRIES'),
+      DB_RETRY_DELAY: this.configService.get('DB_RETRY_DELAY'),
+      DB_MAX_RETRY_DELAY: this.configService.get('DB_MAX_RETRY_DELAY'),
+      DB_CONNECTION_TIMEOUT: this.configService.get('DB_CONNECTION_TIMEOUT'),
+      JWT_SECRET: this.configService.get('JWT_SECRET'),
+      JWT_EXPIRES_IN: this.configService.get('JWT_EXPIRES_IN'),
+      REFRESH_TOKEN_EXPIRES_IN: this.configService.get(
+        'REFRESH_TOKEN_EXPIRES_IN',
       ),
-      jwtExpiresIn: this.getString('JWT_EXPIRES_IN', '1d'),
-      refreshTokenExpiresIn: this.getString('REFRESH_TOKEN_EXPIRES_IN', '7d'),
+      SUPABASE_URL: this.configService.get('SUPABASE_URL'),
+      SUPABASE_KEY: this.configService.get('SUPABASE_KEY'),
+      SUPABASE_SERVICE_KEY: this.configService.get('SUPABASE_SERVICE_KEY'),
+      THROTTLE_TTL: this.configService.get('THROTTLE_TTL'),
+      THROTTLE_LIMIT: this.configService.get('THROTTLE_LIMIT'),
+      GOOGLE_OAUTH_REDIRECT_URL: this.configService.get(
+        'GOOGLE_OAUTH_REDIRECT_URL',
+      ),
+      S3_BUCKET_NAME: this.configService.get('S3_BUCKET_NAME'),
+      S3_REGION: this.configService.get('S3_REGION'),
+      S3_ACCESS_KEY_ID: this.configService.get('S3_ACCESS_KEY_ID'),
+      S3_SECRET_ACCESS_KEY: this.configService.get('S3_SECRET_ACCESS_KEY'),
+      S3_ENDPOINT: this.configService.get('S3_ENDPOINT'),
     };
   }
 
   /**
-   * Get a string value from configuration
-   * @param key Configuration key
-   * @param defaultValue Default value if key is not found
+   * Transform validated environment to structured config
    */
-  private getString(key: string, defaultValue: string = ''): string {
-    const value = this.configService.get<string>(key);
-    return value ?? defaultValue;
+  private transformToValidatedConfig(
+    env: z.infer<typeof baseEnvSchema>,
+  ): ValidatedConfig {
+    return {
+      server: {
+        port: env.PORT,
+        frontendUrl: env.FRONTEND_URL,
+        nodeEnv: env.NODE_ENV,
+        isProduction: env.NODE_ENV === 'production',
+        isDevelopment:
+          env.NODE_ENV === 'development' || env.NODE_ENV === 'test',
+      },
+      database: {
+        url: env.DATABASE_URL,
+        directUrl: env.DIRECT_URL,
+        maxRetries: env.DB_MAX_RETRIES,
+        retryDelay: env.DB_RETRY_DELAY,
+        maxRetryDelay: env.DB_MAX_RETRY_DELAY,
+        connectionTimeout: env.DB_CONNECTION_TIMEOUT,
+      },
+      auth: {
+        jwtSecret: env.JWT_SECRET,
+        jwtExpiresIn: env.JWT_EXPIRES_IN,
+        refreshTokenExpiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
+      },
+      supabase: {
+        url: env.SUPABASE_URL,
+        key: env.SUPABASE_KEY,
+        serviceKey: env.SUPABASE_SERVICE_KEY,
+      },
+      s3: {
+        bucketName: env.S3_BUCKET_NAME,
+        region: env.S3_REGION,
+        accessKeyId: env.S3_ACCESS_KEY_ID,
+        secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+        endpoint: env.S3_ENDPOINT,
+      },
+      oauth: {
+        googleRedirectUrl: env.GOOGLE_OAUTH_REDIRECT_URL,
+      },
+      rateLimit: {
+        ttl: env.THROTTLE_TTL,
+        limit: env.THROTTLE_LIMIT,
+      },
+    };
+  }
+
+  /**
+   * Get validated configuration
+   */
+  get config(): ValidatedConfig {
+    if (!this.validatedConfig) {
+      // If config hasn't been validated yet, validate it synchronously
+      this.logger.log('🔍 Validating environment configuration (on-demand)...');
+      this.validatedConfig = this.validateEnvironmentSync();
+      this.logger.log('✅ Environment configuration validated successfully');
+    }
+    return this.validatedConfig;
+  }
+
+  // Backward compatibility methods - delegate to validated config
+  /**
+   * Get authentication configuration
+   */
+  get auth(): AuthConfig {
+    return this.config.auth;
   }
 
   // Server Configuration
   getPort(): number {
-    return this.configService.get<number>('PORT', 8080);
+    return this.config.server.port;
   }
 
   getFrontendUrl(): string {
-    return this.configService.get<string>(
-      'FRONTEND_URL',
-      'http://localhost:3000',
-    );
+    return this.config.server.frontendUrl;
   }
 
   // Database Configuration
   getDatabaseUrl(): string {
-    return this.configService.get<string>('DATABASE_URL') || '';
+    return this.config.database.url;
   }
 
   getDirectUrl(): string {
-    return this.configService.get<string>('DIRECT_URL') || '';
+    return this.config.database.directUrl;
   }
 
   getDbMaxRetries(): number {
-    return this.configService.get<number>('DB_MAX_RETRIES', 3);
+    return this.config.database.maxRetries;
   }
 
   getDbRetryDelay(): number {
-    return this.configService.get<number>('DB_RETRY_DELAY', 1000);
+    return this.config.database.retryDelay;
   }
 
   getDbMaxRetryDelay(): number {
-    return this.configService.get<number>('DB_MAX_RETRY_DELAY', 10000);
+    return this.config.database.maxRetryDelay;
   }
 
   getDbConnectionTimeout(): number {
-    return this.configService.get<number>('DB_CONNECTION_TIMEOUT', 30000);
+    return this.config.database.connectionTimeout;
   }
 
   // JWT Configuration
   getJwtSecret(): string {
-    return (
-      this.configService.get<string>('JWT_SECRET') ||
-      'default-secret-change-in-production'
-    );
+    return this.config.auth.jwtSecret;
   }
 
   getJwtExpiresIn(): string {
-    return this.configService.get<string>('JWT_EXPIRES_IN', '1h');
+    return this.config.auth.jwtExpiresIn;
   }
 
   getRefreshTokenExpiresIn(): string {
-    return this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN', '7d');
+    return this.config.auth.refreshTokenExpiresIn;
   }
 
   // Supabase Configuration
   getSupabaseUrl(): string {
-    return this.configService.get<string>('SUPABASE_URL') || '';
+    return this.config.supabase.url;
   }
 
   getSupabaseKey(): string {
-    return this.configService.get<string>('SUPABASE_KEY') || '';
+    return this.config.supabase.key;
   }
 
   getSupabaseServiceKey(): string {
-    return this.configService.get<string>('SUPABASE_SERVICE_KEY') || '';
+    return this.config.supabase.serviceKey;
   }
 
   // S3 Configuration
   getS3BucketName(): string {
-    return this.configService.get<string>('S3_BUCKET_NAME') || '';
+    return this.config.s3.bucketName || '';
   }
 
   getS3Region(): string {
-    return this.configService.get<string>('S3_REGION', 'us-east-1');
+    return this.config.s3.region;
   }
 
   getS3AccessKeyId(): string {
-    return this.configService.get<string>('S3_ACCESS_KEY_ID') || '';
+    return this.config.s3.accessKeyId || '';
   }
 
   getS3SecretAccessKey(): string {
-    return this.configService.get<string>('S3_SECRET_ACCESS_KEY') || '';
+    return this.config.s3.secretAccessKey || '';
   }
 
   getS3Endpoint(): string {
-    return this.configService.get<string>(
-      'S3_ENDPOINT',
-      'https://s3.amazonaws.com',
-    );
+    return this.config.s3.endpoint || 'https://s3.amazonaws.com';
   }
 
   // OAuth Configuration
   getGoogleOAuthRedirectUrl(): string {
-    return this.configService.get<string>(
-      'GOOGLE_OAUTH_REDIRECT_URL',
-      'http://localhost:3000/auth/callback',
+    return (
+      this.config.oauth.googleRedirectUrl ||
+      'http://localhost:3000/auth/callback'
     );
   }
 
   // Rate Limiting Configuration
   getThrottleTtl(): number {
-    return this.configService.get<number>('THROTTLE_TTL', 60);
+    return this.config.rateLimit.ttl;
   }
 
   getThrottleLimit(): number {
-    return this.configService.get<number>('THROTTLE_LIMIT', 10);
+    return this.config.rateLimit.limit;
   }
 
   // Environment
   isProduction(): boolean {
-    return this.configService.get<string>('NODE_ENV') === 'production';
+    return this.config.server.isProduction;
   }
 
   isDevelopment(): boolean {
-    return this.configService.get<string>('NODE_ENV') === 'development';
+    return this.config.server.isDevelopment;
   }
 }

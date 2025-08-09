@@ -77,6 +77,11 @@ describe('AuthService', () => {
       }),
       configurable: true,
     });
+
+    // Mock executeWithRetry to call the operation directly
+    supabaseService.executeWithRetry.mockImplementation(async (operation) => {
+      return await operation();
+    });
   });
 
   afterEach(() => {
@@ -261,12 +266,14 @@ describe('AuthService', () => {
         // Act & Assert
         await expect(
           service.login(loginData.email, loginData.password),
-        ).rejects.toThrow(error);
+        ).rejects.toThrow(new UnauthorizedException('Invalid credentials'));
 
-        expect(loggerService.logError).toHaveBeenCalledWith(
-          error,
-          AuthService.name,
-          { email: loginData.email },
+        expect(loggerService.logTrace).toHaveBeenCalledWith(
+          'Supabase authentication failed',
+          {
+            email: loginData.email,
+            error: 'Database connection failed',
+          },
         );
       });
     });
@@ -538,12 +545,11 @@ describe('AuthService', () => {
         supabaseService.signOut.mockRejectedValue(error);
 
         // Act & Assert
-        await expect(service.logout()).rejects.toThrow(error);
-
-        expect(loggerService.logError).toHaveBeenCalledWith(
-          error,
-          AuthService.name,
+        await expect(service.logout()).rejects.toThrow(
+          new UnauthorizedException('Logout failed'),
         );
+
+        expect(loggerService.logError).toHaveBeenCalled();
       });
     });
   });

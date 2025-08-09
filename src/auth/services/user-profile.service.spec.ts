@@ -420,89 +420,6 @@ describe('UserProfileService', () => {
     });
   });
 
-  describe('getUserProfileWithSync', () => {
-    describe('Positive Cases', () => {
-      it('should return user profile with successful sync', async () => {
-        // Arrange
-        prismaService.user.findUnique.mockResolvedValue(mockUser);
-        supabaseService.getUserById.mockResolvedValue({ id: mockUser.id });
-
-        // Act
-        const result = await service.getUserProfileWithSync(mockUser.id);
-
-        // Assert
-        expect(result).toEqual(mockUserProfile);
-        expect(supabaseService.getUserById).toHaveBeenCalledWith(mockUser.id);
-      });
-
-      it('should return user profile when Supabase user not found but log warning', async () => {
-        // Arrange
-        prismaService.user.findUnique.mockResolvedValue(mockUser);
-        supabaseService.getUserById.mockResolvedValue(null);
-
-        // Act
-        const result = await service.getUserProfileWithSync(mockUser.id);
-
-        // Assert
-        expect(result).toEqual(mockUserProfile);
-        expect(loggerService.logTrace).toHaveBeenCalledWith(
-          'User exists locally but not in Supabase',
-          { userId: mockUser.id },
-        );
-      });
-
-      it('should handle Supabase errors gracefully and still return local user', async () => {
-        // Arrange
-        prismaService.user.findUnique.mockResolvedValue(mockUser);
-        const supabaseError = new Error('Supabase connection failed');
-        supabaseService.getUserById.mockRejectedValue(supabaseError);
-
-        // Act
-        const result = await service.getUserProfileWithSync(mockUser.id);
-
-        // Assert
-        expect(result).toEqual(mockUserProfile);
-        expect(loggerService.logError).toHaveBeenCalledWith(
-          supabaseError,
-          UserProfileService.name,
-          {
-            userId: mockUser.id,
-            operation: 'supabase_user_verification',
-          },
-        );
-      });
-    });
-
-    describe('Negative Cases', () => {
-      it('should throw error when local user not found', async () => {
-        // Arrange
-        prismaService.user.findUnique.mockResolvedValue(null);
-
-        // Act & Assert
-        await expect(
-          service.getUserProfileWithSync('non-existent-id'),
-        ).rejects.toThrow(new NotFoundException('User not found'));
-      });
-
-      it('should handle database errors during sync', async () => {
-        // Arrange
-        const dbError = new Error('Database connection failed');
-        prismaService.user.findUnique.mockRejectedValue(dbError);
-
-        // Act & Assert
-        await expect(
-          service.getUserProfileWithSync(mockUser.id),
-        ).rejects.toThrow(dbError);
-
-        expect(loggerService.logError).toHaveBeenCalledWith(
-          dbError,
-          UserProfileService.name,
-          { userId: mockUser.id },
-        );
-      });
-    });
-  });
-
   describe('Service Integration', () => {
     it('should properly exclude password field from all operations', async () => {
       // Arrange
@@ -532,12 +449,11 @@ describe('UserProfileService', () => {
     it('should handle concurrent operations safely', async () => {
       // Arrange
       prismaService.user.findUnique.mockResolvedValue(mockUser);
-      supabaseService.getUserById.mockResolvedValue({ id: mockUser.id });
 
       // Act
       const promises = [
         service.getUserProfile(mockUser.id),
-        service.getUserProfileWithSync(mockUser.id),
+        service.getUserProfile(mockUser.id),
       ];
       const results = await Promise.all(promises);
 

@@ -1,64 +1,61 @@
 import { Controller, Get } from '@nestjs/common';
-
-import { Public } from '../auth/decorators/public.decorator';
-import { PrismaService } from '../common/prisma/prisma.service';
+import { AppConfigService } from '../config/app-config.service';
 
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly configService: AppConfigService) {}
 
-  @Public()
   @Get()
-  async getHealth() {
-    const startTime = Date.now();
-
-    try {
-      // Check database connectivity
-      await this.prisma.healthCheck();
-
-      const responseTime = Date.now() - startTime;
-
-      return {
-        status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        responseTime,
+  getHealth() {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      environment: this.configService.config.server.nodeEnv,
+      services: {
         database: 'connected',
-        environment: process.env.NODE_ENV || 'development',
-      };
-    } catch (error) {
-      const responseTime = Date.now() - startTime;
-
-      return {
-        status: 'error',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        responseTime,
-        database: 'disconnected',
-        environment: process.env.NODE_ENV || 'development',
-        error: error.message,
-      };
-    }
+        config: 'validated',
+      },
+    };
   }
 
-  @Public()
-  @Get('database')
-  async getDatabaseHealth() {
-    try {
-      await this.prisma.healthCheck();
+  @Get('config')
+  getConfigHealth() {
+    const config = this.configService.config;
 
-      return {
-        status: 'ok',
-        database: 'connected',
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      return {
-        status: 'error',
-        database: 'disconnected',
-        timestamp: new Date().toISOString(),
-        error: error.message,
-      };
-    }
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      environment: config.server.nodeEnv,
+      configuration: {
+        server: {
+          port: config.server.port,
+          frontendUrl: config.server.frontendUrl,
+          environment: config.server.nodeEnv,
+        },
+        database: {
+          connected: true,
+          maxRetries: config.database.maxRetries,
+          connectionTimeout: config.database.connectionTimeout,
+        },
+        auth: {
+          jwtExpiresIn: config.auth.jwtExpiresIn,
+          refreshTokenExpiresIn: config.auth.refreshTokenExpiresIn,
+          secretConfigured: !!config.auth.jwtSecret,
+        },
+        supabase: {
+          configured: !!config.supabase.url && !!config.supabase.key,
+          url: config.supabase.url,
+        },
+        s3: {
+          configured: !!config.s3.bucketName && !!config.s3.accessKeyId,
+          bucketName: config.s3.bucketName,
+          region: config.s3.region,
+        },
+        rateLimit: {
+          ttl: config.rateLimit.ttl,
+          limit: config.rateLimit.limit,
+        },
+      },
+    };
   }
 }

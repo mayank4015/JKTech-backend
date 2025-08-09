@@ -26,16 +26,23 @@ export class AuthService {
 
   async login(email: string, password: string) {
     try {
-      // Use Supabase for authentication directly
-      const { data, error } = await this.supabaseService.signIn(
-        email,
-        password,
+      // Use Supabase for authentication with retry logic
+      const { data, error } = await this.supabaseService.executeWithRetry(
+        async () => {
+          try {
+            const result = await this.supabaseService.signIn(email, password);
+            return { data: result?.data || null, error: result?.error || null };
+          } catch (err) {
+            return { data: null, error: err };
+          }
+        },
       );
 
-      if (error || !data.user) {
+      if (error || !data?.user) {
+        const errorMessage = this.extractErrorMessage(error);
         this.logger.logTrace('Supabase authentication failed', {
           email,
-          error: error?.message,
+          error: errorMessage,
         });
         throw new UnauthorizedException('Invalid credentials');
       }
@@ -109,21 +116,31 @@ export class AuthService {
         throw new ConflictException('User with this email already exists');
       }
 
-      // Register user with Supabase
-      const { data, error } = await this.supabaseService.signUp(
-        userData.email,
-        userData.password,
-        { name: userData.name },
+      // Register user with Supabase using retry logic
+      const { data, error } = await this.supabaseService.executeWithRetry(
+        async () => {
+          try {
+            const result = await this.supabaseService.signUp(
+              userData.email,
+              userData.password,
+              { name: userData.name },
+            );
+            return { data: result?.data || null, error: result?.error || null };
+          } catch (err) {
+            return { data: null, error: err };
+          }
+        },
       );
 
-      if (error || !data.user) {
-        const errorToLog = error
-          ? new Error(error.message)
-          : new Error('User creation failed - no user data returned');
+      if (error || !data?.user) {
+        const errorMessage =
+          this.extractErrorMessage(error) ||
+          'User creation failed - no user data returned';
+        const errorToLog = new Error(errorMessage);
         this.logger.logError(errorToLog, AuthService.name, {
           email: userData.email,
         });
-        throw new ConflictException(error?.message || 'User creation failed');
+        throw new ConflictException(errorMessage);
       }
 
       // Determine role based on context
@@ -219,10 +236,20 @@ export class AuthService {
 
   async logout(): Promise<{ message: string }> {
     try {
-      const { error } = await this.supabaseService.signOut();
+      const { error } = await this.supabaseService.executeWithRetry(
+        async () => {
+          try {
+            const result = await this.supabaseService.signOut();
+            return { data: null, error: result?.error || null };
+          } catch (err) {
+            return { data: null, error: err };
+          }
+        },
+      );
 
       if (error) {
-        const errorToLog = new Error(error.message);
+        const errorMessage = this.extractErrorMessage(error) || 'Logout failed';
+        const errorToLog = new Error(errorMessage);
         this.logger.logError(errorToLog, AuthService.name);
         throw new UnauthorizedException('Logout failed');
       }
@@ -245,5 +272,22 @@ export class AuthService {
       this.logger.logError(error, AuthService.name, { userId: id });
       return null;
     }
+  }
+
+  /**
+   * Extract error message from unknown error type
+   * @param error The error to extract message from
+   * @returns Error message string
+   */
+  private extractErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      return String((error as { message: unknown }).message);
+    }
+
+    return String(error);
   }
 }

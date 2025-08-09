@@ -2,15 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import pRetry, { AbortError } from 'p-retry';
 
-// Define user interface for type safety
-interface User {
-  id: string;
-  email?: string;
-  created_at?: string;
-  // Add other user fields as needed
-  [key: string]: unknown; // For any additional fields
-}
-
 interface SupabaseError {
   message: string;
   code?: string;
@@ -315,25 +306,6 @@ export class SupabaseService {
         },
       },
     });
-  }
-
-  /**
-   * Get user by ID
-   * @param userId User ID
-   * @returns User data
-   */
-  async getUserById(userId: string): Promise<User | null> {
-    const { data, error } = await this.supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single<User>();
-
-    if (error) {
-      throw error;
-    }
-
-    return data;
   }
 
   /**

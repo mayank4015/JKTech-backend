@@ -3,14 +3,12 @@ import { User } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { LoggerService } from '../../common/logger/logger.service';
-import { SupabaseService } from '../../common/supabase/supabase.service';
 
 @Injectable()
 export class UserProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
-    private readonly supabaseService: SupabaseService,
   ) {}
 
   async getUserProfile(userId: string): Promise<Omit<User, 'password'>> {
@@ -108,40 +106,6 @@ export class UserProfileService {
         'Consider implementing Supabase user deactivation for complete security',
         { userId },
       );
-    } catch (error) {
-      this.logger.logError(error, UserProfileService.name, { userId });
-      throw error;
-    }
-  }
-
-  /**
-   * Get user profile with Supabase auth data synchronization
-   * This method can be used to sync user data between Supabase and local database
-   */
-  async getUserProfileWithSync(
-    userId: string,
-  ): Promise<Omit<User, 'password'>> {
-    try {
-      // Get user from local database
-      const localUser = await this.getUserProfile(userId);
-
-      // Optionally, you can verify the user exists in Supabase as well
-      try {
-        const supabaseUser = await this.supabaseService.getUserById(userId);
-        if (!supabaseUser) {
-          this.logger.logTrace('User exists locally but not in Supabase', {
-            userId,
-          });
-        }
-      } catch (supabaseError) {
-        this.logger.logError(supabaseError, UserProfileService.name, {
-          userId,
-          operation: 'supabase_user_verification',
-        });
-        // Don't throw here as local user data is still valid
-      }
-
-      return localUser;
     } catch (error) {
       this.logger.logError(error, UserProfileService.name, { userId });
       throw error;
