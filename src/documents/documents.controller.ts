@@ -23,6 +23,7 @@ import { RoleGuard } from '../auth/guards/role.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GetUser } from '../auth/decorators/get-user.decorator';
 import { Role } from '../auth/types/role.types';
+import { ResponseSanitizerInterceptor } from '../sanitization/response-sanitizer.interceptor';
 import {
   CreateDocumentDto,
   UpdateDocumentDto,
@@ -31,6 +32,7 @@ import {
 
 @Controller('documents')
 @UseGuards(JwtAuthGuard, RoleGuard)
+@UseInterceptors(ResponseSanitizerInterceptor)
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 

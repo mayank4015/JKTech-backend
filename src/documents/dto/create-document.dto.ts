@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { IsHtml, SkipSanitize } from '../../sanitization/decorators';
 
 export class CreateDocumentDto {
   @IsString()
@@ -15,6 +16,7 @@ export class CreateDocumentDto {
 
   @IsOptional()
   @IsString()
+  @IsHtml() // Rich HTML content - sanitized with allowlist
   description?: string;
 
   @IsOptional()

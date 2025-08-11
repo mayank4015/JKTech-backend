@@ -98,6 +98,10 @@ describe('DocumentsService', () => {
   });
 
   beforeEach(async () => {
+    // Mock Date.now and Date constructor for consistent timestamps
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2024-01-01T00:00:00.000Z'));
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DocumentsService,
@@ -124,6 +128,8 @@ describe('DocumentsService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
   describe('uploadDocument', () => {

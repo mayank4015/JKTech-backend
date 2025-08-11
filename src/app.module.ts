@@ -27,6 +27,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ValidationPipe } from './common/pipes/validation.pipe';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ThrottlerExceptionFilter } from './common/rate-limit/throttler-exception.filter';
+import { SanitizationModule } from './sanitization/sanitization.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { ThrottlerExceptionFilter } from './common/rate-limit/throttler-exceptio
     FileUploadModule,
     AccessControlModule,
     SupabaseModule,
+    SanitizationModule,
 
     // Feature modules
     AuthModule,

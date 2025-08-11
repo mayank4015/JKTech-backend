@@ -40,7 +40,7 @@ global.console = {
 
 // Mock Date.now for consistent testing
 const mockDate = new Date('2024-01-01T00:00:00.000Z');
-jest.spyOn(global, 'Date').mockImplementation(() => mockDate);
+// Only mock Date.now, not the Date constructor to preserve instanceof checks
 Date.now = jest.fn(() => mockDate.getTime());
 
 // Import types for better type safety

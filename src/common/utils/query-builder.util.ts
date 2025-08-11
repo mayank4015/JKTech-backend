@@ -161,11 +161,19 @@ export class QueryBuilder {
     const filter: any = {};
 
     if (startDate) {
-      filter.gte = new Date(startDate);
+      const start = new Date(startDate);
+      // Check if the date is valid
+      if (!isNaN(start.getTime())) {
+        filter.gte = start;
+      }
     }
 
     if (endDate) {
-      filter.lte = new Date(endDate);
+      const end = new Date(endDate);
+      // Check if the date is valid
+      if (!isNaN(end.getTime())) {
+        filter.lte = end;
+      }
     }
 
     return Object.keys(filter).length > 0 ? filter : undefined;

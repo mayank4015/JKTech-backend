@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { PrismaService } from './common/prisma/prisma.service';
 import { AppConfigService } from './config/app-config.service';
+import { SanitizePipe } from './sanitization/sanitize.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -43,6 +44,8 @@ async function bootstrap() {
         enableImplicitConversion: true,
       },
     }),
+    // Add sanitization pipe after validation
+    app.get(SanitizePipe),
   );
 
   // Database health check on startup

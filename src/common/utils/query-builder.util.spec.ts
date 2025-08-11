@@ -840,8 +840,7 @@ describe('QueryBuilder Utility', () => {
 
         const result = QueryBuilder.buildDateRangeFilter(startDate, endDate);
 
-        expect(result.gte).toBeDefined();
-        expect(result.gte.toString()).toContain('2024'); // The mock Date converts invalid dates to valid ones
+        expect(result.gte).toBeUndefined(); // Invalid date should be ignored
         expect(result.lte).toEqual(new Date('2024-12-31'));
       });
 
