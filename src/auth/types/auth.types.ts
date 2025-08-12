@@ -3,6 +3,7 @@ export interface JwtPayload {
   email: string;
   role: string;
   name: string;
+  jti?: string; // JWT ID for token blacklisting
   iat?: number;
   exp?: number;
 }

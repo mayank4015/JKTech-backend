@@ -5,11 +5,13 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { User } from '@prisma/client';
+import { v4 as uuidv4 } from 'uuid';
 
 import { PrismaService } from '../common/prisma/prisma.service';
 import { LoggerService } from '../common/logger/logger.service';
 import { SupabaseService } from '../common/supabase/supabase.service';
 import { UserProfileService } from './services/user-profile.service';
+import { TokenBlacklistService } from './services/token-blacklist.service';
 import { AuthTokens, JwtPayload, UserData } from './types/auth.types';
 import { AppConfigService } from '../config/app-config.service';
 
@@ -22,6 +24,7 @@ export class AuthService {
     private readonly supabaseService: SupabaseService,
     private readonly configService: AppConfigService,
     private readonly userProfileService: UserProfileService,
+    private readonly tokenBlacklistService: TokenBlacklistService,
   ) {}
 
   async login(email: string, password: string) {
@@ -206,23 +209,37 @@ export class AuthService {
    * @returns Access and refresh tokens
    */
   async generateTokens(userData: UserData): Promise<AuthTokens> {
-    // Create the payload
-    const payload: JwtPayload = {
+    // Generate unique JTIs for each token
+    const accessTokenJti = uuidv4();
+    const refreshTokenJti = uuidv4();
+
+    // Create the payload for access token
+    const accessPayload: JwtPayload = {
       sub: userData.id,
       email: userData.email,
       role: userData.role || 'admin',
       name: userData.name,
+      jti: accessTokenJti,
+    };
+
+    // Create the payload for refresh token
+    const refreshPayload: JwtPayload = {
+      sub: userData.id,
+      email: userData.email,
+      role: userData.role || 'admin',
+      name: userData.name,
+      jti: refreshTokenJti,
     };
 
     this.logger.debug(`Generating tokens for user: ${userData.id}`);
 
     // Generate tokens in parallel
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(accessPayload, {
         secret: this.configService.auth.jwtSecret,
         expiresIn: this.configService.auth.jwtExpiresIn,
       }),
-      this.jwtService.signAsync(payload, {
+      this.jwtService.signAsync(refreshPayload, {
         secret: this.configService.auth.jwtSecret,
         expiresIn: this.configService.auth.refreshTokenExpiresIn,
       }),
@@ -234,8 +251,19 @@ export class AuthService {
     };
   }
 
-  async logout(): Promise<{ message: string }> {
+  async logout(tokenPayload?: JwtPayload): Promise<{ message: string }> {
     try {
+      // Blacklist the current token if payload is provided
+      if (tokenPayload?.jti && tokenPayload?.exp) {
+        await this.tokenBlacklistService.blacklistToken(
+          tokenPayload.jti,
+          tokenPayload.exp,
+        );
+        this.logger.debug(
+          `Token blacklisted during logout: ${tokenPayload.jti}`,
+        );
+      }
+
       const { error } = await this.supabaseService.executeWithRetry(
         async () => {
           try {
@@ -259,6 +287,29 @@ export class AuthService {
       return { message: 'Logout successful' };
     } catch (error) {
       this.logger.logError(error, AuthService.name);
+      throw error;
+    }
+  }
+
+  /**
+   * Blacklist all tokens for a user (useful for security incidents)
+   * @param userId User ID
+   * @param beforeTimestamp Optional timestamp to only blacklist tokens issued before this time
+   */
+  async logoutAllSessions(
+    userId: string,
+    beforeTimestamp?: Date,
+  ): Promise<{ message: string }> {
+    try {
+      await this.tokenBlacklistService.blacklistUserTokens(
+        userId,
+        beforeTimestamp,
+      );
+      this.logger.debug(`All sessions logged out for user: ${userId}`);
+
+      return { message: 'All sessions logged out successfully' };
+    } catch (error) {
+      this.logger.logError(error, AuthService.name, { userId });
       throw error;
     }
   }

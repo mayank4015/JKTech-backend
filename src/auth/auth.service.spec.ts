@@ -8,6 +8,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { LoggerService } from '../common/logger/logger.service';
 import { SupabaseService } from '../common/supabase/supabase.service';
 import { UserProfileService } from './services/user-profile.service';
+import { TokenBlacklistService } from './services/token-blacklist.service';
 import { AppConfigService } from '../config/app-config.service';
 import { AuthTokens, JwtPayload } from './types/auth.types';
 import {
@@ -24,6 +25,7 @@ describe('AuthService', () => {
   let supabaseService: DeepMockProxy<SupabaseService>;
   let configService: DeepMockProxy<AppConfigService>;
   let userProfileService: DeepMockProxy<UserProfileService>;
+  let tokenBlacklistService: DeepMockProxy<TokenBlacklistService>;
 
   const mockUser = testUtils.createMockUser();
   const mockJwtPayload = testUtils.createMockJwtPayload();
@@ -57,6 +59,10 @@ describe('AuthService', () => {
           provide: UserProfileService,
           useValue: mockDeep<UserProfileService>(),
         },
+        {
+          provide: TokenBlacklistService,
+          useValue: mockDeep<TokenBlacklistService>(),
+        },
       ],
     }).compile();
 
@@ -67,6 +73,7 @@ describe('AuthService', () => {
     supabaseService = module.get(SupabaseService);
     configService = module.get(AppConfigService);
     userProfileService = module.get(UserProfileService);
+    tokenBlacklistService = module.get(TokenBlacklistService);
 
     // Setup default config service mocks
     Object.defineProperty(configService, 'auth', {
@@ -164,21 +171,35 @@ describe('AuthService', () => {
         await service.login(loginData.email, loginData.password);
 
         // Assert
-        const expectedPayload: JwtPayload = {
+        expect(jwtService.signAsync).toHaveBeenCalledTimes(2);
+
+        // Check that both calls include JTI and other expected fields
+        const firstCall = jwtService.signAsync.mock.calls[0];
+        const secondCall = jwtService.signAsync.mock.calls[1];
+
+        const firstPayload = firstCall[0] as JwtPayload;
+        const secondPayload = secondCall[0] as JwtPayload;
+
+        expect(firstPayload).toMatchObject({
           sub: mockUser.id,
           email: mockUser.email,
           name: mockUser.name,
           role: mockUser.role,
-        };
+        });
+        expect(firstPayload).toHaveProperty('jti');
+        expect(typeof firstPayload.jti).toBe('string');
 
-        expect(jwtService.signAsync).toHaveBeenCalledWith(expectedPayload, {
-          secret: configService.auth.jwtSecret,
-          expiresIn: configService.auth.jwtExpiresIn,
+        expect(secondPayload).toMatchObject({
+          sub: mockUser.id,
+          email: mockUser.email,
+          name: mockUser.name,
+          role: mockUser.role,
         });
-        expect(jwtService.signAsync).toHaveBeenCalledWith(expectedPayload, {
-          secret: configService.auth.jwtSecret,
-          expiresIn: configService.auth.refreshTokenExpiresIn,
-        });
+        expect(secondPayload).toHaveProperty('jti');
+        expect(typeof secondPayload.jti).toBe('string');
+
+        // Ensure JTIs are different
+        expect(firstPayload.jti).not.toBe(secondPayload.jti);
       });
     });
 
@@ -491,17 +512,30 @@ describe('AuthService', () => {
         await service.generateTokens(userDataWithoutRole);
 
         // Assert
-        const expectedPayload = {
+        expect(jwtService.signAsync).toHaveBeenCalledTimes(2);
+
+        // Check that both calls include JTI and default role
+        const firstCall = jwtService.signAsync.mock.calls[0];
+        const secondCall = jwtService.signAsync.mock.calls[1];
+
+        const firstPayload = firstCall[0] as JwtPayload;
+        const secondPayload = secondCall[0] as JwtPayload;
+
+        expect(firstPayload).toMatchObject({
           sub: userData.id,
           email: userData.email,
           name: userData.name,
           role: 'admin', // Default role
-        };
+        });
+        expect(firstPayload).toHaveProperty('jti');
 
-        expect(jwtService.signAsync).toHaveBeenCalledWith(
-          expectedPayload,
-          expect.any(Object),
-        );
+        expect(secondPayload).toMatchObject({
+          sub: userData.id,
+          email: userData.email,
+          name: userData.name,
+          role: 'admin', // Default role
+        });
+        expect(secondPayload).toHaveProperty('jti');
       });
     });
   });

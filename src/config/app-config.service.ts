@@ -44,6 +44,20 @@ const baseEnvSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
   S3_ENDPOINT: z.string().url().optional(),
+
+  // Redis Configuration (Optional for token blacklisting)
+  REDIS_HOST: z.string().default('localhost'),
+  REDIS_PORT: z.coerce.number().min(1).max(65535).default(6379),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_DB: z.coerce.number().min(0).default(0),
+  REDIS_MAX_RETRIES: z.coerce.number().min(1).default(3),
+  REDIS_RETRY_DELAY: z.coerce.number().min(100).default(100),
+  REDIS_CONNECTION_TIMEOUT: z.coerce.number().min(5000).default(5000),
+  REDIS_COMMAND_TIMEOUT: z.coerce.number().min(5000).default(5000),
+  REDIS_TLS: z
+    .string()
+    .default('false')
+    .transform((val) => val === 'true'),
 });
 
 // Production-specific validation
@@ -109,6 +123,17 @@ export interface ValidatedConfig {
   rateLimit: {
     ttl: number;
     limit: number;
+  };
+  redis: {
+    host: string;
+    port: number;
+    password?: string;
+    db: number;
+    maxRetries: number;
+    retryDelay: number;
+    connectionTimeout: number;
+    commandTimeout: number;
+    useTls: boolean;
   };
 }
 
@@ -226,6 +251,17 @@ export class AppConfigService implements OnModuleInit {
       S3_ACCESS_KEY_ID: this.configService.get('S3_ACCESS_KEY_ID'),
       S3_SECRET_ACCESS_KEY: this.configService.get('S3_SECRET_ACCESS_KEY'),
       S3_ENDPOINT: this.configService.get('S3_ENDPOINT'),
+      REDIS_HOST: this.configService.get('REDIS_HOST'),
+      REDIS_PORT: this.configService.get('REDIS_PORT'),
+      REDIS_PASSWORD: this.configService.get('REDIS_PASSWORD'),
+      REDIS_DB: this.configService.get('REDIS_DB'),
+      REDIS_MAX_RETRIES: this.configService.get('REDIS_MAX_RETRIES'),
+      REDIS_RETRY_DELAY: this.configService.get('REDIS_RETRY_DELAY'),
+      REDIS_CONNECTION_TIMEOUT: this.configService.get(
+        'REDIS_CONNECTION_TIMEOUT',
+      ),
+      REDIS_COMMAND_TIMEOUT: this.configService.get('REDIS_COMMAND_TIMEOUT'),
+      REDIS_TLS: this.configService.get('REDIS_TLS'),
     };
   }
 
@@ -275,6 +311,17 @@ export class AppConfigService implements OnModuleInit {
       rateLimit: {
         ttl: env.THROTTLE_TTL,
         limit: env.THROTTLE_LIMIT,
+      },
+      redis: {
+        host: env.REDIS_HOST,
+        port: env.REDIS_PORT,
+        password: env.REDIS_PASSWORD,
+        db: env.REDIS_DB,
+        maxRetries: env.REDIS_MAX_RETRIES,
+        retryDelay: env.REDIS_RETRY_DELAY,
+        connectionTimeout: env.REDIS_CONNECTION_TIMEOUT,
+        commandTimeout: env.REDIS_COMMAND_TIMEOUT,
+        useTls: env.REDIS_TLS,
       },
     };
   }
@@ -396,6 +443,43 @@ export class AppConfigService implements OnModuleInit {
 
   getThrottleLimit(): number {
     return this.config.rateLimit.limit;
+  }
+
+  // Redis Configuration
+  getRedisHost(): string {
+    return this.config.redis.host;
+  }
+
+  getRedisPort(): number {
+    return this.config.redis.port;
+  }
+
+  getRedisPassword(): string | undefined {
+    return this.config.redis.password;
+  }
+
+  getRedisDb(): number {
+    return this.config.redis.db;
+  }
+
+  getRedisMaxRetries(): number {
+    return this.config.redis.maxRetries;
+  }
+
+  getRedisRetryDelay(): number {
+    return this.config.redis.retryDelay;
+  }
+
+  getRedisConnectionTimeout(): number {
+    return this.config.redis.connectionTimeout;
+  }
+
+  getRedisCommandTimeout(): number {
+    return this.config.redis.commandTimeout;
+  }
+
+  getRedisUseTls(): boolean {
+    return this.config.redis.useTls;
   }
 
   // Environment

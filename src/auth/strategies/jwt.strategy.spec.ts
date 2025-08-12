@@ -5,6 +5,7 @@ import { Request } from 'express';
 
 import { JwtStrategy } from './jwt.strategy';
 import { AuthService } from '../auth.service';
+import { TokenBlacklistService } from '../services/token-blacklist.service';
 import { AppConfigService } from '../../config/app-config.service';
 import { JwtPayload } from '../types/auth.types';
 
@@ -16,6 +17,7 @@ describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
   let authService: DeepMockProxy<AuthService>;
   let configService: DeepMockProxy<AppConfigService>;
+  let tokenBlacklistService: DeepMockProxy<TokenBlacklistService>;
 
   const mockUser = testUtils.createMockUser();
   const mockJwtPayload = testUtils.createMockJwtPayload();
@@ -24,6 +26,7 @@ describe('JwtStrategy', () => {
     // Create mocks before module compilation
     const mockAuthService = mockDeep<AuthService>();
     const mockConfigService = mockDeep<AppConfigService>();
+    const mockTokenBlacklistService = mockDeep<TokenBlacklistService>();
 
     // Set up config service mocks before instantiation
     mockConfigService.getJwtSecret.mockReturnValue('test-jwt-secret');
@@ -51,12 +54,17 @@ describe('JwtStrategy', () => {
           provide: AppConfigService,
           useValue: mockConfigService,
         },
+        {
+          provide: TokenBlacklistService,
+          useValue: mockTokenBlacklistService,
+        },
       ],
     }).compile();
 
     strategy = module.get<JwtStrategy>(JwtStrategy);
     authService = module.get(AuthService);
     configService = module.get(AppConfigService);
+    tokenBlacklistService = module.get(TokenBlacklistService);
   });
 
   afterEach(() => {
@@ -67,16 +75,21 @@ describe('JwtStrategy', () => {
     describe('Positive Cases', () => {
       it('should return user when valid payload and active user', async () => {
         // Arrange
+        const payloadWithJti = { ...mockJwtPayload, jti: 'test-jti' };
         authService.findUserById.mockResolvedValue(mockUser);
+        tokenBlacklistService.isTokenBlacklisted.mockResolvedValue(false);
 
         // Act
-        const result = await strategy.validate(mockJwtPayload);
+        const result = await strategy.validate(payloadWithJti);
 
         // Assert
-        expect(authService.findUserById).toHaveBeenCalledWith(
-          mockJwtPayload.sub,
+        expect(tokenBlacklistService.isTokenBlacklisted).toHaveBeenCalledWith(
+          'test-jti',
         );
-        expect(result).toEqual(mockUser);
+        expect(authService.findUserById).toHaveBeenCalledWith(
+          payloadWithJti.sub,
+        );
+        expect(result).toEqual({ ...mockUser, tokenPayload: payloadWithJti });
       });
 
       it('should validate user with different roles', async () => {
@@ -91,7 +104,7 @@ describe('JwtStrategy', () => {
         const result = await strategy.validate(editorPayload);
 
         // Assert
-        expect(result).toEqual(editorUser);
+        expect(result).toEqual({ ...editorUser, tokenPayload: editorPayload });
         expect(result.role).toBe('editor');
       });
 
@@ -107,23 +120,44 @@ describe('JwtStrategy', () => {
         const result = await strategy.validate(viewerPayload);
 
         // Assert
-        expect(result).toEqual(viewerUser);
+        expect(result).toEqual({ ...viewerUser, tokenPayload: viewerPayload });
         expect(result.role).toBe('viewer');
       });
     });
 
     describe('Negative Cases', () => {
+      it('should throw UnauthorizedException when token is blacklisted', async () => {
+        // Arrange
+        const payloadWithJti = { ...mockJwtPayload, jti: 'blacklisted-jti' };
+        tokenBlacklistService.isTokenBlacklisted.mockResolvedValue(true);
+
+        // Act & Assert
+        await expect(strategy.validate(payloadWithJti)).rejects.toThrow(
+          new UnauthorizedException('Token has been revoked'),
+        );
+
+        expect(tokenBlacklistService.isTokenBlacklisted).toHaveBeenCalledWith(
+          'blacklisted-jti',
+        );
+        expect(authService.findUserById).not.toHaveBeenCalled();
+      });
+
       it('should throw UnauthorizedException when user not found', async () => {
         // Arrange
+        const payloadWithJti = { ...mockJwtPayload, jti: 'test-jti' };
+        tokenBlacklistService.isTokenBlacklisted.mockResolvedValue(false);
         authService.findUserById.mockResolvedValue(null);
 
         // Act & Assert
-        await expect(strategy.validate(mockJwtPayload)).rejects.toThrow(
+        await expect(strategy.validate(payloadWithJti)).rejects.toThrow(
           new UnauthorizedException('User not found'),
         );
 
+        expect(tokenBlacklistService.isTokenBlacklisted).toHaveBeenCalledWith(
+          'test-jti',
+        );
         expect(authService.findUserById).toHaveBeenCalledWith(
-          mockJwtPayload.sub,
+          payloadWithJti.sub,
         );
       });
 

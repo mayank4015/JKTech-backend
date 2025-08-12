@@ -14,15 +14,20 @@ import { User } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 
 import { AuthService } from './auth.service';
+import { TokenBlacklistService } from './services/token-blacklist.service';
 import { Public } from './decorators/public.decorator';
 import { GetUser } from './decorators/get-user.decorator';
+import { Roles } from './decorators/roles.decorator';
 import { CookieService } from './services/cookie.service';
 import { AppConfigService } from '../config/app-config.service';
+import { JwtPayload } from './types/auth.types';
+import { Role } from './types/role.types';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly tokenBlacklistService: TokenBlacklistService,
     private readonly cookieService: CookieService,
     private readonly jwtService: JwtService,
     private readonly configService: AppConfigService,
@@ -76,13 +81,24 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@Res({ passthrough: true }) response: Response) {
-    // Call Supabase logout
-    const result = await this.authService.logout();
+  async logout(
+    @GetUser() user: User & { tokenPayload?: any },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    // Call Supabase logout with token payload for blacklisting
+    const result = await this.authService.logout(user.tokenPayload);
 
     // Clear HTTP-only cookies
     this.cookieService.clearRefreshTokenCookie(response);
 
+    return result;
+  }
+
+  @Post('logout-all')
+  @HttpCode(HttpStatus.OK)
+  async logoutAllSessions(@GetUser() user: User) {
+    // Logout all sessions for the current user
+    const result = await this.authService.logoutAllSessions(user.id);
     return result;
   }
 
@@ -108,15 +124,35 @@ export class AuthController {
 
     try {
       // Verify the refresh token
-      const payload = await this.jwtService.verifyAsync(refreshToken, {
-        secret: this.configService.auth.jwtSecret,
-      });
+      const payload: JwtPayload = await this.jwtService.verifyAsync(
+        refreshToken,
+        {
+          secret: this.configService.auth.jwtSecret,
+        },
+      );
+
+      // Check if refresh token is blacklisted
+      if (payload.jti) {
+        const isBlacklisted =
+          await this.tokenBlacklistService.isTokenBlacklisted(payload.jti);
+        if (isBlacklisted) {
+          throw new UnauthorizedException('Refresh token has been revoked');
+        }
+      }
 
       // Find the user
       const user = await this.authService.findUserById(payload.sub);
 
       if (!user) {
         throw new UnauthorizedException('User not found');
+      }
+
+      // Blacklist the old refresh token
+      if (payload.jti && payload.exp) {
+        await this.tokenBlacklistService.blacklistToken(
+          payload.jti,
+          payload.exp,
+        );
       }
 
       // Generate new tokens
@@ -143,5 +179,16 @@ export class AuthController {
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  @Get('blacklist/stats')
+  @Roles(Role.ADMIN)
+  @HttpCode(HttpStatus.OK)
+  async getBlacklistStats() {
+    const stats = await this.tokenBlacklistService.getBlacklistStats();
+    return {
+      message: 'Token blacklist statistics',
+      data: stats,
+    };
   }
 }

@@ -12,6 +12,7 @@ import { RateLimitModule } from './common/rate-limit/rate-limit.module';
 import { FileUploadModule } from './common/file-upload/file-upload.module';
 import { AccessControlModule } from './common/access-control/access-control.module';
 import { SupabaseModule } from './common/supabase/supabase.module';
+import { RedisModule } from './common/redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { DocumentsModule } from './documents/documents.module';
@@ -54,6 +55,7 @@ import { SanitizationModule } from './sanitization/sanitization.module';
     FileUploadModule,
     AccessControlModule,
     SupabaseModule,
+    RedisModule,
     SanitizationModule,
 
     // Feature modules

@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
 
 import { AuthService } from '../auth.service';
+import { TokenBlacklistService } from '../services/token-blacklist.service';
 import { AppConfigService } from '../../config/app-config.service';
 import { JwtPayload } from '../types/auth.types';
 
@@ -12,6 +13,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private authService: AuthService,
     private configService: AppConfigService,
+    private tokenBlacklistService: TokenBlacklistService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -31,6 +33,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
+    // Check if token is blacklisted
+    if (payload.jti) {
+      const isBlacklisted = await this.tokenBlacklistService.isTokenBlacklisted(
+        payload.jti,
+      );
+      if (isBlacklisted) {
+        throw new UnauthorizedException('Token has been revoked');
+      }
+    }
+
     const user = await this.authService.findUserById(payload.sub);
 
     if (!user) {
@@ -41,6 +53,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Account is deactivated');
     }
 
-    return user;
+    // Attach the payload to the user object for potential use in controllers
+    return { ...user, tokenPayload: payload };
   }
 }

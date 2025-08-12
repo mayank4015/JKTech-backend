@@ -1,11 +1,36 @@
 import { Controller, Get } from '@nestjs/common';
+import {
+  HealthCheck,
+  HealthCheckService,
+  PrismaHealthIndicator,
+} from '@nestjs/terminus';
+import { RedisHealthIndicator } from './redis.health';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { Public } from '../auth/decorators/public.decorator';
 import { AppConfigService } from '../config/app-config.service';
 
 @Controller('health')
 export class HealthController {
-  constructor(private readonly configService: AppConfigService) {}
+  constructor(
+    private health: HealthCheckService,
+    private prismaHealth: PrismaHealthIndicator,
+    private redisHealth: RedisHealthIndicator,
+    private prisma: PrismaService,
+    private readonly configService: AppConfigService,
+  ) {}
 
   @Get()
+  @Public()
+  @HealthCheck()
+  check() {
+    return this.health.check([
+      () => this.prismaHealth.pingCheck('database', this.prisma),
+      () => this.redisHealth.isHealthy('redis'),
+    ]);
+  }
+
+  @Get('legacy')
+  @Public()
   getHealth() {
     return {
       status: 'ok',
@@ -14,6 +39,7 @@ export class HealthController {
       services: {
         database: 'connected',
         config: 'validated',
+        redis: 'connected',
       },
     };
   }
