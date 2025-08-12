@@ -45,9 +45,12 @@ export class AuthController {
       loginDto.password,
     );
 
-    // Set refresh token cookie
+    // Set both access and refresh token cookies
     if (result.refreshToken) {
       this.cookieService.setRefreshTokenCookie(response, result.refreshToken);
+    }
+    if (result.accessToken) {
+      this.cookieService.setAccessTokenCookie(response, result.accessToken);
     }
 
     // Return access token and user data (but not the refresh token)
@@ -65,10 +68,13 @@ export class AuthController {
   ) {
     const result = await this.authService.register(registerDto);
 
-    // Check if the result has a refreshToken property
+    // Check if the result has tokens and set cookies
     if ('refreshToken' in result) {
-      // Set refresh token cookie
+      // Set both access and refresh token cookies
       this.cookieService.setRefreshTokenCookie(response, result.refreshToken);
+      if ('accessToken' in result) {
+        this.cookieService.setAccessTokenCookie(response, result.accessToken);
+      }
 
       // Return access token and user data (but not the refresh token)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -88,8 +94,8 @@ export class AuthController {
     // Call Supabase logout with token payload for blacklisting
     const result = await this.authService.logout(user.tokenPayload);
 
-    // Clear HTTP-only cookies
-    this.cookieService.clearRefreshTokenCookie(response);
+    // Clear all HTTP-only cookies
+    this.cookieService.clearAllAuthCookies(response);
 
     return result;
   }
@@ -163,12 +169,14 @@ export class AuthController {
         role: user.role,
       });
 
-      // Set the new refresh token cookie
+      // Set both access and refresh token cookies
       this.cookieService.setRefreshTokenCookie(response, tokens.refreshToken);
+      this.cookieService.setAccessTokenCookie(response, tokens.accessToken);
 
-      // Return the new access token (but not the refresh token)
+      // Return both tokens for middleware to handle properly
       return {
         accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
         user: {
           id: user.id,
           email: user.email,
