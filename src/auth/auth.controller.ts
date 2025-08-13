@@ -25,6 +25,9 @@ import { Role } from './types/role.types';
 
 @Controller('auth')
 export class AuthController {
+  // In-memory cache to prevent concurrent refresh attempts for the same token
+  private refreshInProgress = new Map<string, Promise<any>>();
+
   constructor(
     private readonly authService: AuthService,
     private readonly tokenBlacklistService: TokenBlacklistService,
@@ -128,40 +131,83 @@ export class AuthController {
       throw new UnauthorizedException('Refresh token not found');
     }
 
+    let payload: JwtPayload;
+
     try {
       // Verify the refresh token
-      const payload: JwtPayload = await this.jwtService.verifyAsync(
-        refreshToken,
-        {
-          secret: this.configService.auth.jwtSecret,
-        },
-      );
+      payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: this.configService.auth.jwtSecret,
+      });
 
+      console.log(
+        `[REFRESH] Token verified for user: ${payload.sub}, JTI: ${payload.jti}`,
+      );
+    } catch (error) {
+      console.log(`[REFRESH] Token verification failed:`, error.message);
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // Check if there's already a refresh in progress for this token
+    const refreshKey = payload.jti || refreshToken;
+    if (this.refreshInProgress.has(refreshKey)) {
+      console.log(
+        `[REFRESH] Refresh already in progress for token: ${payload.jti}`,
+      );
+      try {
+        // Wait for the existing refresh to complete
+        const result = await this.refreshInProgress.get(refreshKey);
+        // Set cookies for this response too
+        this.cookieService.setRefreshTokenCookie(response, result.refreshToken);
+        this.cookieService.setAccessTokenCookie(response, result.accessToken);
+        return result;
+      } catch (error) {
+        // If the existing refresh failed, continue with a new one
+        console.log(`[REFRESH] Existing refresh failed, starting new one`);
+      }
+    }
+
+    // Create a promise for this refresh operation
+    const refreshPromise = this.performTokenRefresh(payload, response);
+    this.refreshInProgress.set(refreshKey, refreshPromise);
+
+    try {
+      const result = await refreshPromise;
+      return result;
+    } finally {
+      // Clean up the cache entry
+      this.refreshInProgress.delete(refreshKey);
+    }
+  }
+
+  private async performTokenRefresh(payload: JwtPayload, response: Response) {
+    try {
       // Check if refresh token is blacklisted
       if (payload.jti) {
         const isBlacklisted =
           await this.tokenBlacklistService.isTokenBlacklisted(payload.jti);
         if (isBlacklisted) {
+          console.log(`[REFRESH] Token is blacklisted: ${payload.jti}`);
           throw new UnauthorizedException('Refresh token has been revoked');
         }
+        console.log(`[REFRESH] Token is not blacklisted: ${payload.jti}`);
       }
 
       // Find the user
       const user = await this.authService.findUserById(payload.sub);
 
       if (!user) {
+        console.log(`[REFRESH] User not found: ${payload.sub}`);
         throw new UnauthorizedException('User not found');
       }
 
-      // Blacklist the old refresh token
-      if (payload.jti && payload.exp) {
-        await this.tokenBlacklistService.blacklistToken(
-          payload.jti,
-          payload.exp,
-        );
+      if (!user.isActive) {
+        console.log(`[REFRESH] User account is deactivated: ${payload.sub}`);
+        throw new UnauthorizedException('Account is deactivated');
       }
 
-      // Generate new tokens
+      console.log(`[REFRESH] Generating new tokens for user: ${user.id}`);
+
+      // Generate new tokens FIRST
       const tokens = await this.authService.generateTokens({
         id: user.id,
         email: user.email,
@@ -169,9 +215,29 @@ export class AuthController {
         role: user.role,
       });
 
+      console.log(`[REFRESH] New tokens generated successfully`);
+
       // Set both access and refresh token cookies
       this.cookieService.setRefreshTokenCookie(response, tokens.refreshToken);
       this.cookieService.setAccessTokenCookie(response, tokens.accessToken);
+
+      console.log(`[REFRESH] Cookies set successfully`);
+
+      // Only blacklist the old refresh token AFTER successful token generation and cookie setting
+      if (payload.jti && payload.exp) {
+        console.log(`[REFRESH] Blacklisting old token: ${payload.jti}`);
+        // Use a non-blocking approach for blacklisting to avoid delays
+        this.tokenBlacklistService
+          .blacklistToken(payload.jti, payload.exp)
+          .catch((error) => {
+            // Log the error but don't fail the refresh process
+            console.error('Failed to blacklist old refresh token:', error);
+          });
+      }
+
+      console.log(
+        `[REFRESH] Token refresh completed successfully for user: ${user.id}`,
+      );
 
       // Return both tokens for middleware to handle properly
       return {
@@ -185,7 +251,12 @@ export class AuthController {
         },
       };
     } catch (error) {
-      throw new UnauthorizedException('Invalid refresh token');
+      console.log(`[REFRESH] Error during refresh process:`, error.message);
+      // If there's an error after token verification but before successful refresh,
+      // don't blacklist the token so the user can retry
+      throw error instanceof UnauthorizedException
+        ? error
+        : new UnauthorizedException('Token refresh failed');
     }
   }
 
