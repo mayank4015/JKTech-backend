@@ -19,8 +19,10 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  documents  Document[]
-  ingestions Ingestion[]
+  documents     Document[]
+  ingestions    Ingestion[]
+  conversations Conversation[]
+  savedQAs      SavedQA[]
 
   @@map("users")
 }
@@ -66,4 +68,62 @@ model Ingestion {
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("ingestions")
+}
+
+model Conversation {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title        String   @db.VarChar(500)
+  userId       String   @db.Uuid @map("user_id")
+  isBookmarked Boolean  @default(false) @map("is_bookmarked")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions Question[]
+
+  @@map("conversations")
+}
+
+model Question {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String   @db.Uuid @map("conversation_id")
+  text           String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  answer       Answer?
+
+  @@map("questions")
+}
+
+model Answer {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionId String   @unique @db.Uuid @map("question_id")
+  text       String   @db.Text
+  confidence Float?   @default(0.0)
+  sources    Json?    // Array of document sources with excerpts
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("answers")
+}
+
+model SavedQA {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @db.Uuid @map("user_id")
+  questionId String   @db.Uuid @map("question_id")
+  answerId   String   @db.Uuid @map("answer_id")
+  notes      String?  @db.Text
+  tags       String[] @default([])
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId, answerId])
+  @@map("saved_qas")
 }

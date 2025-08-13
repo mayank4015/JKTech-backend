@@ -31,6 +31,7 @@ import { ValidationPipe } from './common/pipes/validation.pipe';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { ThrottlerExceptionFilter } from './common/rate-limit/throttler-exception.filter';
 import { SanitizationModule } from './sanitization/sanitization.module';
+import { QAModule } from './qa/qa.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { SanitizationModule } from './sanitization/sanitization.module';
     DocumentsModule,
     IngestionsModule,
     ProcessingModule,
+    QAModule,
     HealthModule,
   ],
   controllers: [AppController],
