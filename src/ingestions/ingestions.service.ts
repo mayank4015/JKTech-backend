@@ -8,11 +8,27 @@ import { Ingestion, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { LoggerService } from '../common/logger/logger.service';
 import {
+  ProcessingQueueService,
+  DocumentProcessingJobData,
+} from '../common/queues/processing-queue.service';
+import {
   CreateIngestionDto,
   IngestionFiltersDto,
   IngestionStatus,
   IngestionSortBy,
 } from './dto';
+
+export interface IngestionConfig {
+  extractText?: boolean;
+  performOCR?: boolean;
+  extractKeywords?: boolean;
+  generateSummary?: boolean;
+  detectLanguage?: boolean;
+  enableSearch?: boolean;
+  autoProcess?: boolean;
+  priority?: number;
+  [key: string]: any;
+}
 
 export interface IngestionWithDetails extends Ingestion {
   document: {
@@ -52,7 +68,15 @@ export class IngestionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly logger: LoggerService,
+    private readonly processingQueue: ProcessingQueueService,
   ) {}
+
+  private parseIngestionConfig(config: any): IngestionConfig {
+    if (!config || typeof config !== 'object') {
+      return {};
+    }
+    return config as IngestionConfig;
+  }
 
   async createIngestion(
     createIngestionDto: CreateIngestionDto,
@@ -99,6 +123,13 @@ export class IngestionsService {
       });
 
       this.logger.debug(`Ingestion created successfully: ${ingestion.id}`);
+
+      // Trigger processing via queue if auto-process is enabled
+      const parsedConfig = this.parseIngestionConfig(createIngestionDto.config);
+      if (parsedConfig.autoProcess !== false) {
+        await this.triggerDocumentProcessing(ingestion.id, userId);
+      }
+
       return ingestion;
     } catch (error) {
       this.logger.error(
@@ -382,5 +413,164 @@ export class IngestionsService {
     }, 0);
 
     return Math.round(totalTime / completedIngestions.length / 1000); // Return in seconds
+  }
+
+  async triggerDocumentProcessing(
+    ingestionId: string,
+    userId: string,
+  ): Promise<string> {
+    this.logger.debug(`Triggering processing for ingestion: ${ingestionId}`);
+
+    // Get ingestion with document details
+    const ingestion = await this.prisma.ingestion.findUnique({
+      where: { id: ingestionId },
+      include: {
+        document: true,
+      },
+    });
+
+    if (!ingestion) {
+      throw new NotFoundException('Ingestion not found');
+    }
+
+    if (!ingestion.document) {
+      throw new NotFoundException('Document not found for ingestion');
+    }
+
+    // Prepare job data
+    const parsedConfig = this.parseIngestionConfig(ingestion.config);
+    const jobData: DocumentProcessingJobData = {
+      documentId: ingestion.documentId,
+      fileName: ingestion.document.fileName,
+      fileType: ingestion.document.fileType,
+      filePath: ingestion.document.fileUrl,
+      userId,
+      config: {
+        extractText: parsedConfig.extractText ?? true,
+        performOCR: parsedConfig.performOCR ?? false,
+        extractKeywords: parsedConfig.extractKeywords ?? true,
+        generateSummary: parsedConfig.generateSummary ?? true,
+        detectLanguage: parsedConfig.detectLanguage ?? true,
+        enableSearch: parsedConfig.enableSearch ?? true,
+      },
+    };
+
+    try {
+      // Add job to processing queue
+      const job = await this.processingQueue.addProcessingJob(jobData, {
+        priority: parsedConfig.priority || 0,
+        attempts: 3,
+      });
+
+      // Update ingestion status to processing
+      await this.updateIngestionStatus(
+        ingestionId,
+        IngestionStatus.PROCESSING,
+        0,
+        undefined,
+        { jobId: job.id.toString() },
+      );
+
+      this.logger.debug(
+        `Processing job created for ingestion ${ingestionId} with job ID: ${job.id}`,
+      );
+
+      return job.id.toString();
+    } catch (error) {
+      this.logger.error(
+        `Failed to trigger processing for ingestion ${ingestionId}:`,
+        error.stack,
+      );
+
+      // Update ingestion status to failed
+      await this.updateIngestionStatus(
+        ingestionId,
+        IngestionStatus.FAILED,
+        0,
+        `Failed to queue processing: ${error.message}`,
+      );
+
+      throw new BadRequestException(
+        `Failed to trigger processing: ${error.message}`,
+      );
+    }
+  }
+
+  async getProcessingStatus(ingestionId: string): Promise<any> {
+    const ingestion = await this.prisma.ingestion.findUnique({
+      where: { id: ingestionId },
+    });
+
+    if (!ingestion) {
+      throw new NotFoundException('Ingestion not found');
+    }
+
+    const jobId = (ingestion.logs as any)?.jobId;
+    if (!jobId) {
+      return {
+        status: ingestion.status,
+        progress: ingestion.progress,
+        error: ingestion.error,
+      };
+    }
+
+    // Get job status from queue
+    const jobStatus = await this.processingQueue.getJobStatus(jobId);
+    if (!jobStatus) {
+      return {
+        status: ingestion.status,
+        progress: ingestion.progress,
+        error: ingestion.error,
+      };
+    }
+
+    return {
+      status: jobStatus.status,
+      progress: jobStatus.progress,
+      error: jobStatus.error,
+      jobId: jobStatus.id,
+      createdAt: jobStatus.createdAt,
+      processedAt: jobStatus.processedAt,
+      finishedAt: jobStatus.finishedAt,
+    };
+  }
+
+  async cancelProcessing(
+    ingestionId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const ingestion = await this.prisma.ingestion.findUnique({
+      where: { id: ingestionId },
+    });
+
+    if (!ingestion) {
+      throw new NotFoundException('Ingestion not found');
+    }
+
+    // Check if user has permission to cancel
+    if (ingestion.userId !== userId) {
+      throw new ForbiddenException('Access denied to cancel this processing');
+    }
+
+    const jobId = (ingestion.logs as any)?.jobId;
+    if (!jobId) {
+      throw new BadRequestException(
+        'No processing job found for this ingestion',
+      );
+    }
+
+    // Cancel the job
+    const cancelled = await this.processingQueue.cancelJob(jobId);
+    if (cancelled) {
+      // Update ingestion status
+      await this.updateIngestionStatus(
+        ingestionId,
+        IngestionStatus.FAILED,
+        ingestion.progress,
+        'Processing cancelled by user',
+      );
+    }
+
+    return cancelled;
   }
 }

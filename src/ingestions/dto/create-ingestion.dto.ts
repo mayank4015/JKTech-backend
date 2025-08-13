@@ -1,4 +1,5 @@
 import { IsUUID, IsOptional, IsObject } from 'class-validator';
+import { IngestionConfig } from '../ingestions.service';
 
 export class CreateIngestionDto {
   @IsUUID()
@@ -6,5 +7,5 @@ export class CreateIngestionDto {
 
   @IsOptional()
   @IsObject()
-  config?: Record<string, any>;
+  config?: IngestionConfig;
 }

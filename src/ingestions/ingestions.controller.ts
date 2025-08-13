@@ -114,4 +114,66 @@ export class IngestionsController {
       data: ingestion,
     };
   }
+
+  // Processing endpoints
+  @Post(':id/process')
+  @HttpCode(HttpStatus.OK)
+  async triggerProcessing(
+    @Param('id') id: string,
+    @Body() config: any,
+    @GetUser() user: User,
+  ) {
+    const jobId = await this.ingestionsService.triggerDocumentProcessing(
+      id,
+      user.id,
+    );
+
+    return {
+      success: true,
+      data: { jobId },
+      message: 'Processing started successfully',
+    };
+  }
+
+  @Get(':id/status')
+  async getProcessingStatus(@Param('id') id: string, @GetUser() user: User) {
+    const status = await this.ingestionsService.getProcessingStatus(id);
+
+    return {
+      success: true,
+      data: status,
+    };
+  }
+
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelProcessing(@Param('id') id: string, @GetUser() user: User) {
+    const cancelled = await this.ingestionsService.cancelProcessing(
+      id,
+      user.id,
+    );
+
+    return {
+      success: true,
+      data: { cancelled },
+      message: cancelled
+        ? 'Processing cancelled successfully'
+        : 'Failed to cancel processing',
+    };
+  }
+
+  @Post(':id/retry')
+  @HttpCode(HttpStatus.OK)
+  async retryProcessing(@Param('id') id: string, @GetUser() user: User) {
+    const jobId = await this.ingestionsService.triggerDocumentProcessing(
+      id,
+      user.id,
+    );
+
+    return {
+      success: true,
+      data: { jobId },
+      message: 'Processing restarted successfully',
+    };
+  }
 }

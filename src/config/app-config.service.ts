@@ -58,6 +58,9 @@ const baseEnvSchema = z.object({
     .string()
     .default('false')
     .transform((val) => val === 'true'),
+
+  // Service Token Configuration (for inter-service communication)
+  SERVICE_TOKEN: z.string().default('processing-service-token'),
 });
 
 // Production-specific validation
@@ -134,6 +137,9 @@ export interface ValidatedConfig {
     connectionTimeout: number;
     commandTimeout: number;
     useTls: boolean;
+  };
+  service: {
+    token: string;
   };
 }
 
@@ -262,6 +268,7 @@ export class AppConfigService implements OnModuleInit {
       ),
       REDIS_COMMAND_TIMEOUT: this.configService.get('REDIS_COMMAND_TIMEOUT'),
       REDIS_TLS: this.configService.get('REDIS_TLS'),
+      SERVICE_TOKEN: this.configService.get('SERVICE_TOKEN'),
     };
   }
 
@@ -322,6 +329,9 @@ export class AppConfigService implements OnModuleInit {
         connectionTimeout: env.REDIS_CONNECTION_TIMEOUT,
         commandTimeout: env.REDIS_COMMAND_TIMEOUT,
         useTls: env.REDIS_TLS,
+      },
+      service: {
+        token: env.SERVICE_TOKEN,
       },
     };
   }
@@ -489,5 +499,10 @@ export class AppConfigService implements OnModuleInit {
 
   isDevelopment(): boolean {
     return this.config.server.isDevelopment;
+  }
+
+  // Service Configuration
+  getServiceToken(): string {
+    return this.config.service.token;
   }
 }

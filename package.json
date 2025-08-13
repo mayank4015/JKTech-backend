@@ -28,6 +28,7 @@
     "db:push": "prisma db push"
   },
   "dependencies": {
+    "@nestjs/bull": "^11.0.3",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
@@ -42,6 +43,7 @@
     "@types/dompurify": "^3.0.5",
     "@types/jsdom": "^21.1.7",
     "bcrypt": "^5.1.1",
+    "bull": "^4.16.5",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "cookie-parser": "^1.4.7",

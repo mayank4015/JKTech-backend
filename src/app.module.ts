@@ -13,10 +13,12 @@ import { FileUploadModule } from './common/file-upload/file-upload.module';
 import { AccessControlModule } from './common/access-control/access-control.module';
 import { SupabaseModule } from './common/supabase/supabase.module';
 import { RedisModule } from './common/redis/redis.module';
+import { QueuesModule } from './common/queues/queues.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { DocumentsModule } from './documents/documents.module';
 import { IngestionsModule } from './ingestions/ingestions.module';
+import { ProcessingModule } from './processing/processing.module';
 import { HealthModule } from './health/health.module';
 import { ProvidersModule } from './common/providers/providers.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
@@ -56,6 +58,7 @@ import { SanitizationModule } from './sanitization/sanitization.module';
     AccessControlModule,
     SupabaseModule,
     RedisModule,
+    QueuesModule,
     SanitizationModule,
 
     // Feature modules
@@ -63,6 +66,7 @@ import { SanitizationModule } from './sanitization/sanitization.module';
     UsersModule,
     DocumentsModule,
     IngestionsModule,
+    ProcessingModule,
     HealthModule,
   ],
   controllers: [AppController],
