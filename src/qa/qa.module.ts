@@ -5,9 +5,10 @@ import { RAGService } from './services/rag.service';
 import { ConversationService } from './services/conversation.service';
 import { DocumentSearchService } from './services/document-search.service';
 import { PrismaModule } from '../common/prisma/prisma.module';
+import { IngestionsModule } from '../ingestions/ingestions.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, IngestionsModule],
   controllers: [QAController],
   providers: [
     QAService,

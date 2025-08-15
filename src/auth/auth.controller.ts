@@ -225,14 +225,21 @@ export class AuthController {
 
       // Only blacklist the old refresh token AFTER successful token generation and cookie setting
       if (payload.jti && payload.exp) {
-        console.log(`[REFRESH] Blacklisting old token: ${payload.jti}`);
-        // Use a non-blocking approach for blacklisting to avoid delays
-        this.tokenBlacklistService
-          .blacklistToken(payload.jti, payload.exp)
-          .catch((error) => {
-            // Log the error but don't fail the refresh process
-            console.error('Failed to blacklist old refresh token:', error);
-          });
+        console.log(
+          `[REFRESH] Scheduling blacklist for old token: ${payload.jti}`,
+        );
+        // Use a non-blocking approach with a small delay to ensure new tokens are processed
+        setTimeout(() => {
+          this.tokenBlacklistService
+            .blacklistToken(payload.jti!, payload.exp!)
+            .catch((error) => {
+              // Log the error but don't fail the refresh process
+              console.error(
+                `Failed to blacklist old refresh token ${payload.jti}:`,
+                error.message,
+              );
+            });
+        }, 500); // 500ms delay to ensure new tokens are fully processed
       }
 
       console.log(

@@ -27,6 +27,10 @@ export enum SortOrder {
 
 export class IngestionFiltersDto {
   @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
   @IsEnum(IngestionStatus)
   status?: IngestionStatus;
 
@@ -36,7 +40,19 @@ export class IngestionFiltersDto {
 
   @IsOptional()
   @IsUUID()
+  createdBy?: string;
+
+  @IsOptional()
+  @IsUUID()
   userId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateStart?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateEnd?: string;
 
   @IsOptional()
   @IsDateString()

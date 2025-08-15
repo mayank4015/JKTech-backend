@@ -119,11 +119,11 @@ export class DocumentsService {
         },
       });
 
-      // Create initial ingestion record
+      // Create ingestion record for processing
       await this.prisma.ingestion.create({
         data: {
           documentId: document.id,
-          userId,
+          userId: userId,
           status: 'queued',
           progress: 0,
         },

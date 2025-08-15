@@ -9,6 +9,7 @@ import {
 import { Transform } from 'class-transformer';
 
 export enum DocumentStatus {
+  UPLOADED = 'uploaded',
   PENDING = 'pending',
   PROCESSED = 'processed',
   FAILED = 'failed',

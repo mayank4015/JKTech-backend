@@ -10,6 +10,7 @@ import {
   HttpStatus,
   ParseIntPipe,
   DefaultValuePipe,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { IngestionsService } from './ingestions.service';
@@ -47,13 +48,18 @@ export class IngestionsController {
   async getIngestions(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-    @Query() filters: IngestionFiltersDto,
+    @Query() allQuery: any,
     @GetUser() user: User,
   ) {
+    // Extract filters by excluding pagination parameters
+    const { page: _, limit: __, ...filters } = allQuery;
+    const filtersDto = new IngestionFiltersDto();
+    Object.assign(filtersDto, filters);
+
     const result = await this.ingestionsService.getIngestions(
       page,
       limit,
-      filters,
+      filtersDto,
       user.id,
       user.role,
     );
@@ -64,8 +70,27 @@ export class IngestionsController {
     };
   }
 
+  @Get('stats')
+  async getIngestionStats(@GetUser() user: User) {
+    const result = await this.ingestionsService.getIngestions(
+      1,
+      1,
+      {},
+      user.id,
+      user.role,
+    );
+
+    return {
+      success: true,
+      data: result.stats,
+    };
+  }
+
   @Get(':id')
-  async getIngestionById(@Param('id') id: string, @GetUser() user: User) {
+  async getIngestionById(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetUser() user: User,
+  ) {
     const ingestion = await this.ingestionsService.getIngestionById(
       id,
       user.id,
@@ -84,12 +109,17 @@ export class IngestionsController {
   async getAllIngestions(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
-    @Query() filters: IngestionFiltersDto,
+    @Query() allQuery: any,
   ) {
+    // Extract filters by excluding pagination parameters
+    const { page: _, limit: __, ...filters } = allQuery;
+    const filtersDto = new IngestionFiltersDto();
+    Object.assign(filtersDto, filters);
+
     const result = await this.ingestionsService.getIngestions(
       page,
       limit,
-      filters,
+      filtersDto,
       undefined,
       'admin',
     );
@@ -102,7 +132,7 @@ export class IngestionsController {
 
   @Get('admin/:id')
   @Roles(Role.ADMIN)
-  async getAnyIngestionById(@Param('id') id: string) {
+  async getAnyIngestionById(@Param('id', ParseUUIDPipe) id: string) {
     const ingestion = await this.ingestionsService.getIngestionById(
       id,
       undefined,
@@ -119,7 +149,7 @@ export class IngestionsController {
   @Post(':id/process')
   @HttpCode(HttpStatus.OK)
   async triggerProcessing(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() config: any,
     @GetUser() user: User,
   ) {
@@ -136,7 +166,10 @@ export class IngestionsController {
   }
 
   @Get(':id/status')
-  async getProcessingStatus(@Param('id') id: string, @GetUser() user: User) {
+  async getProcessingStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetUser() user: User,
+  ) {
     const status = await this.ingestionsService.getProcessingStatus(id);
 
     return {
@@ -147,7 +180,10 @@ export class IngestionsController {
 
   @Post(':id/cancel')
   @HttpCode(HttpStatus.OK)
-  async cancelProcessing(@Param('id') id: string, @GetUser() user: User) {
+  async cancelProcessing(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetUser() user: User,
+  ) {
     const cancelled = await this.ingestionsService.cancelProcessing(
       id,
       user.id,
@@ -164,7 +200,10 @@ export class IngestionsController {
 
   @Post(':id/retry')
   @HttpCode(HttpStatus.OK)
-  async retryProcessing(@Param('id') id: string, @GetUser() user: User) {
+  async retryProcessing(
+    @Param('id', ParseUUIDPipe) id: string,
+    @GetUser() user: User,
+  ) {
     const jobId = await this.ingestionsService.triggerDocumentProcessing(
       id,
       user.id,

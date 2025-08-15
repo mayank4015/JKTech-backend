@@ -25,7 +25,7 @@ export interface FrontendDocument {
   uploadedByName: string;
   createdAt: string;
   updatedAt: string;
-  status: 'pending' | 'processing' | 'processed' | 'failed';
+  status: 'uploaded' | 'pending' | 'processed' | 'failed';
   tags: string[];
   category?: string;
   processingProgress?: number;
@@ -73,11 +73,7 @@ export function transformDocumentForFrontend(
     uploadedByName: document.uploader?.name || 'Unknown',
     createdAt: createdAtString,
     updatedAt: updatedAtString,
-    status: document.status as
-      | 'pending'
-      | 'processing'
-      | 'processed'
-      | 'failed',
+    status: document.status as 'uploaded' | 'pending' | 'processed' | 'failed',
     tags: document.tags || [],
     category: document.category || undefined,
     processingProgress: 0, // Default value, can be updated based on ingestion status

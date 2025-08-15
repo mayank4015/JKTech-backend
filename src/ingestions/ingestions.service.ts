@@ -27,6 +27,13 @@ export interface IngestionConfig {
   enableSearch?: boolean;
   autoProcess?: boolean;
   priority?: number;
+  chunkSize?: number;
+  chunkOverlap?: number;
+  extractImages?: boolean;
+  extractTables?: boolean;
+  language?: string;
+  processingMode?: 'standard' | 'enhanced' | 'custom';
+  customSettings?: Record<string, any>;
   [key: string]: any;
 }
 
@@ -41,6 +48,19 @@ export interface IngestionWithDetails extends Ingestion {
     name: string;
     email: string;
   };
+  documentTitle: string;
+  createdBy: string;
+  createdByName: string;
+  configuration: {
+    chunkSize: number;
+    chunkOverlap: number;
+    extractImages: boolean;
+    extractTables: boolean;
+    language: string;
+    processingMode: 'standard' | 'enhanced' | 'custom';
+    customSettings: Record<string, any>;
+  };
+  processingSteps: any[];
 }
 
 export interface IngestionStats {
@@ -50,6 +70,7 @@ export interface IngestionStats {
   queued: number;
   failed: number;
   averageProcessingTime: number;
+  successRate: number;
 }
 
 export interface PaginatedIngestions {
@@ -81,7 +102,7 @@ export class IngestionsService {
   async createIngestion(
     createIngestionDto: CreateIngestionDto,
     userId: string,
-  ): Promise<Ingestion> {
+  ): Promise<IngestionWithDetails> {
     this.logger.debug(
       `Creating ingestion for document: ${createIngestionDto.documentId} by user: ${userId}`,
     );
@@ -130,7 +151,24 @@ export class IngestionsService {
         await this.triggerDocumentProcessing(ingestion.id, userId);
       }
 
-      return ingestion;
+      // Transform ingestion to match frontend expectations
+      const config = this.parseIngestionConfig(ingestion.config);
+      return {
+        ...ingestion,
+        documentTitle: ingestion.document.title,
+        createdBy: ingestion.userId,
+        createdByName: ingestion.user.name,
+        configuration: {
+          chunkSize: config.chunkSize || 1000,
+          chunkOverlap: config.chunkOverlap || 200,
+          extractImages: config.extractImages || false,
+          extractTables: config.extractTables || false,
+          language: config.language || 'en',
+          processingMode: config.processingMode || 'standard',
+          customSettings: config.customSettings || {},
+        },
+        processingSteps: [], // TODO: Implement processing steps if needed
+      };
     } catch (error) {
       this.logger.error(
         `Failed to create ingestion: ${error.message}`,
@@ -164,19 +202,34 @@ export class IngestionsService {
       where.documentId = filters.documentId;
     }
 
-    // User filter
+    // User filter (support both userId and createdBy)
     if (filters.userId) {
       where.userId = filters.userId;
     }
+    if (filters.createdBy) {
+      where.userId = filters.createdBy;
+    }
 
-    // Date range filter
-    if (filters.startDate || filters.endDate) {
+    // Search filter (search in document title)
+    if (filters.search) {
+      where.document = {
+        title: {
+          contains: filters.search,
+          mode: 'insensitive',
+        },
+      };
+    }
+
+    // Date range filter (support both formats)
+    const startDate = filters.startDate || filters.dateStart;
+    const endDate = filters.endDate || filters.dateEnd;
+    if (startDate || endDate) {
       where.startedAt = {};
-      if (filters.startDate) {
-        where.startedAt.gte = new Date(filters.startDate);
+      if (startDate) {
+        where.startedAt.gte = new Date(startDate);
       }
-      if (filters.endDate) {
-        where.startedAt.lte = new Date(filters.endDate);
+      if (endDate) {
+        where.startedAt.lte = new Date(endDate);
       }
     }
 
@@ -236,8 +289,29 @@ export class IngestionsService {
       this.getIngestionStats(where),
     ]);
 
+    // Transform ingestions to match frontend expectations
+    const transformedIngestions = ingestions.map((ingestion) => {
+      const config = this.parseIngestionConfig(ingestion.config);
+      return {
+        ...ingestion,
+        documentTitle: ingestion.document.title,
+        createdBy: ingestion.userId,
+        createdByName: ingestion.user.name,
+        configuration: {
+          chunkSize: config.chunkSize || 1000,
+          chunkOverlap: config.chunkOverlap || 200,
+          extractImages: config.extractImages || false,
+          extractTables: config.extractTables || false,
+          language: config.language || 'en',
+          processingMode: config.processingMode || 'standard',
+          customSettings: config.customSettings || {},
+        },
+        processingSteps: [], // TODO: Implement processing steps if needed
+      };
+    });
+
     return {
-      ingestions,
+      ingestions: transformedIngestions,
       pagination: {
         total,
         page,
@@ -282,7 +356,24 @@ export class IngestionsService {
       throw new ForbiddenException('Access denied to this ingestion');
     }
 
-    return ingestion;
+    // Transform ingestion to match frontend expectations
+    const config = this.parseIngestionConfig(ingestion.config);
+    return {
+      ...ingestion,
+      documentTitle: ingestion.document.title,
+      createdBy: ingestion.userId,
+      createdByName: ingestion.user.name,
+      configuration: {
+        chunkSize: config.chunkSize || 1000,
+        chunkOverlap: config.chunkOverlap || 200,
+        extractImages: config.extractImages || false,
+        extractTables: config.extractTables || false,
+        language: config.language || 'en',
+        processingMode: config.processingMode || 'standard',
+        customSettings: config.customSettings || {},
+      },
+      processingSteps: [], // TODO: Implement processing steps if needed
+    };
   }
 
   async updateIngestionStatus(
@@ -364,6 +455,7 @@ export class IngestionsService {
       queued: 0,
       failed: 0,
       averageProcessingTime: avgProcessingTime,
+      successRate: 0,
     };
 
     statusStats.forEach((stat) => {
@@ -382,6 +474,13 @@ export class IngestionsService {
           break;
       }
     });
+
+    // Calculate success rate
+    const totalFinished = stats.completed + stats.failed;
+    stats.successRate =
+      totalFinished > 0
+        ? Math.round((stats.completed / totalFinished) * 100)
+        : 0;
 
     return stats;
   }
@@ -572,5 +671,267 @@ export class IngestionsService {
     }
 
     return cancelled;
+  }
+
+  /**
+   * Get processed content from the latest completed ingestion for a document
+   * Used by QA module for RAG functionality
+   */
+  async getProcessedContent(documentId: string): Promise<{
+    extractedText?: string;
+    summary?: string;
+    keywords?: string[];
+    language?: string;
+    ocrText?: string;
+  } | null> {
+    const latestIngestion = await this.prisma.ingestion.findFirst({
+      where: {
+        documentId,
+        status: IngestionStatus.COMPLETED,
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+    });
+
+    if (!latestIngestion?.logs) {
+      return null;
+    }
+
+    const ingestionData = latestIngestion.logs as any;
+    const processingResult = ingestionData.processingResult || {};
+
+    return {
+      extractedText:
+        processingResult.extractedText || ingestionData.extractedText,
+      summary: processingResult.summary,
+      keywords: processingResult.keywords || [],
+      language: processingResult.language,
+      ocrText: processingResult.ocrText,
+    };
+  }
+
+  /**
+   * Get processed content for multiple documents
+   * Optimized for QA search operations
+   */
+  async getProcessedContentBatch(documentIds: string[]): Promise<
+    Map<
+      string,
+      {
+        extractedText?: string;
+        summary?: string;
+        keywords?: string[];
+        language?: string;
+        ocrText?: string;
+      }
+    >
+  > {
+    if (documentIds.length === 0) {
+      return new Map();
+    }
+
+    const ingestions = await this.prisma.ingestion.findMany({
+      where: {
+        documentId: { in: documentIds },
+        status: IngestionStatus.COMPLETED,
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+    });
+
+    // Group by documentId and take the latest for each
+    const latestByDocument = new Map<string, any>();
+
+    for (const ingestion of ingestions) {
+      if (!latestByDocument.has(ingestion.documentId)) {
+        latestByDocument.set(ingestion.documentId, ingestion);
+      }
+    }
+
+    const result = new Map<string, any>();
+
+    for (const [documentId, ingestion] of latestByDocument) {
+      if (ingestion.logs) {
+        const ingestionData = ingestion.logs as any;
+        const processingResult = ingestionData.processingResult || {};
+
+        result.set(documentId, {
+          extractedText:
+            processingResult.extractedText || ingestionData.extractedText,
+          summary: processingResult.summary,
+          keywords: processingResult.keywords || [],
+          language: processingResult.language,
+          ocrText: processingResult.ocrText,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Search within processed document content
+   * Used for enhanced document search in QA module
+   */
+  async searchProcessedContent(
+    query: string,
+    userId: string,
+    limit: number = 10,
+  ): Promise<
+    Array<{
+      documentId: string;
+      relevanceScore: number;
+      excerpt: string;
+      matchType: 'title' | 'content' | 'summary' | 'keywords';
+    }>
+  > {
+    // Get user's completed ingestions
+    const ingestions = await this.prisma.ingestion.findMany({
+      where: {
+        userId,
+        status: IngestionStatus.COMPLETED,
+      },
+      include: {
+        document: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            tags: true,
+          },
+        },
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+    });
+
+    const results: Array<{
+      documentId: string;
+      relevanceScore: number;
+      excerpt: string;
+      matchType: 'title' | 'content' | 'summary' | 'keywords';
+    }> = [];
+
+    const queryLower = query.toLowerCase();
+    const queryKeywords = queryLower
+      .split(/\s+/)
+      .filter((word) => word.length > 2);
+
+    for (const ingestion of ingestions) {
+      if (!ingestion.logs) continue;
+
+      const ingestionData = ingestion.logs as any;
+      const processingResult = ingestionData.processingResult || {};
+      const document = ingestion.document;
+
+      let bestMatch: any = null;
+      let bestScore = 0;
+
+      // Check title match
+      if (document.title.toLowerCase().includes(queryLower)) {
+        const score = 0.9;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = {
+            excerpt: document.title,
+            matchType: 'title' as const,
+          };
+        }
+      }
+
+      // Check content match
+      const extractedText =
+        processingResult.extractedText || ingestionData.extractedText;
+      if (extractedText && extractedText.toLowerCase().includes(queryLower)) {
+        const score = 0.7;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = {
+            excerpt: this.extractRelevantExcerpt(extractedText, query, 200),
+            matchType: 'content' as const,
+          };
+        }
+      }
+
+      // Check summary match
+      if (
+        processingResult.summary &&
+        processingResult.summary.toLowerCase().includes(queryLower)
+      ) {
+        const score = 0.6;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = {
+            excerpt: processingResult.summary,
+            matchType: 'summary' as const,
+          };
+        }
+      }
+
+      // Check keywords match
+      const keywords = processingResult.keywords || [];
+      const matchingKeywords = keywords.filter((keyword: string) =>
+        queryKeywords.includes(keyword.toLowerCase()),
+      );
+      if (matchingKeywords.length > 0) {
+        const score = 0.5 + matchingKeywords.length * 0.1;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = {
+            excerpt: `Keywords: ${matchingKeywords.join(', ')}`,
+            matchType: 'keywords' as const,
+          };
+        }
+      }
+
+      if (bestMatch && bestScore > 0) {
+        results.push({
+          documentId: document.id,
+          relevanceScore: bestScore,
+          excerpt: bestMatch.excerpt,
+          matchType: bestMatch.matchType,
+        });
+      }
+    }
+
+    // Sort by relevance and limit results
+    return results
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, limit);
+  }
+
+  private extractRelevantExcerpt(
+    text: string,
+    query: string,
+    maxLength: number,
+  ): string {
+    if (!text) return 'No content available';
+
+    const lowerText = text.toLowerCase();
+    const lowerQuery = query.toLowerCase();
+
+    // Find the position of the query in the text
+    const queryIndex = lowerText.indexOf(lowerQuery);
+
+    if (queryIndex === -1) {
+      // If exact query not found, return beginning of text
+      return (
+        text.substring(0, maxLength) + (text.length > maxLength ? '...' : '')
+      );
+    }
+
+    // Extract text around the query
+    const start = Math.max(0, queryIndex - maxLength / 2);
+    const end = Math.min(text.length, start + maxLength);
+
+    let excerpt = text.substring(start, end);
+
+    if (start > 0) excerpt = '...' + excerpt;
+    if (end < text.length) excerpt = excerpt + '...';
+
+    return excerpt;
   }
 }

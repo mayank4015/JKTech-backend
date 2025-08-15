@@ -8,7 +8,7 @@ export class RAGService {
 
   constructor(private readonly documentSearchService: DocumentSearchService) {}
 
-  async generateAnswer(question: string): Promise<RAGResult> {
+  async generateAnswer(question: string, userId?: string): Promise<RAGResult> {
     try {
       this.logger.log(`Generating answer for question: ${question}`);
 
@@ -16,6 +16,7 @@ export class RAGService {
       const sources = await this.documentSearchService.searchDocuments(
         question,
         5,
+        userId,
       );
 
       if (sources.length === 0) {

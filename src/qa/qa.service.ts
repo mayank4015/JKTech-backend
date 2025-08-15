@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { IngestionsService } from '../ingestions/ingestions.service';
 import { RAGService } from './services/rag.service';
 import { ConversationService } from './services/conversation.service';
 import { Prisma } from '@prisma/client';
@@ -14,6 +15,7 @@ import {
 export class QAService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly ingestionsService: IngestionsService,
     private readonly ragService: RAGService,
     private readonly conversationService: ConversationService,
   ) {}
@@ -41,7 +43,7 @@ export class QAService {
     });
 
     // Generate answer using RAG
-    const ragResult = await this.ragService.generateAnswer(dto.text);
+    const ragResult = await this.ragService.generateAnswer(dto.text, userId);
 
     // Save the answer
     const answer = await this.prisma.answer.create({
@@ -63,6 +65,10 @@ export class QAService {
       },
       conversationId,
     };
+  }
+
+  async createConversation(userId: string, dto: CreateConversationDto) {
+    return this.conversationService.createConversation(userId, dto);
   }
 
   async getConversations(
@@ -244,6 +250,73 @@ export class QAService {
     await this.prisma.savedQA.delete({
       where: { id },
     });
+  }
+
+  async searchDocuments(userId: string, query: string, limit: number = 10) {
+    // Use the enhanced search from IngestionService
+    const searchResults = await this.ingestionsService.searchProcessedContent(
+      query,
+      userId,
+      limit,
+    );
+
+    // Get document details for each result
+    const documentIds = searchResults.map((result) => result.documentId);
+    const documents = await this.prisma.document.findMany({
+      where: {
+        id: { in: documentIds },
+        uploadedBy: userId,
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        category: true,
+        tags: true,
+        fileType: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    // Get processed content for all documents
+    const processedContentMap =
+      await this.ingestionsService.getProcessedContentBatch(documentIds);
+
+    // Combine search results with document details and processed content
+    const enrichedSources = searchResults
+      .map((result) => {
+        const document = documents.find((doc) => doc.id === result.documentId);
+        const processedContent = processedContentMap.get(result.documentId);
+
+        if (!document) return null;
+
+        return {
+          documentId: result.documentId,
+          title: document.title,
+          description: document.description,
+          category: document.category,
+          tags: document.tags,
+          fileType: document.fileType,
+          createdAt: document.createdAt,
+          updatedAt: document.updatedAt,
+          relevanceScore: result.relevanceScore,
+          excerpt: result.excerpt,
+          matchType: result.matchType,
+          extractedText: processedContent?.extractedText || null,
+          summary: processedContent?.summary || null,
+          keywords: processedContent?.keywords || [],
+          language: processedContent?.language || null,
+          ocrText: processedContent?.ocrText || null,
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      sources: enrichedSources,
+      total: enrichedSources.length,
+      query,
+    };
   }
 
   private generateConversationTitle(question: string): string {

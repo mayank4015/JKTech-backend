@@ -20,6 +20,7 @@ import {
   SortOrder,
 } from './dto';
 import { PaginatedDocuments, DocumentStats } from './documents.service';
+import { FrontendDocument } from '../common/utils/document-transformer.util';
 
 describe('DocumentsController', () => {
   let controller: DocumentsController;
@@ -46,7 +47,7 @@ describe('DocumentsController', () => {
   const mockDocumentId = 'test-document-id';
   const mockIngestionId = 'test-ingestion-id';
 
-  const createMockFrontendDocument = () => ({
+  const createMockFrontendDocument = (): FrontendDocument => ({
     id: mockDocumentId,
     title: 'Test Document',
     description: 'Test document description',
@@ -61,11 +62,6 @@ describe('DocumentsController', () => {
     category: 'general',
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-01T00:00:00.000Z',
-    uploader: {
-      id: mockUser.id,
-      name: mockUser.name,
-      email: mockUser.email,
-    },
   });
 
   const createMockFile = (

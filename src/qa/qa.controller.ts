@@ -36,7 +36,7 @@ export class QAController {
     @Request() req: any,
     @Body() dto: CreateConversationDto,
   ) {
-    return this.qaService.getConversations(req.user.sub);
+    return this.qaService.createConversation(req.user.sub, dto);
   }
 
   @Get('conversations')
@@ -88,5 +88,17 @@ export class QAController {
   async deleteSavedQA(@Request() req: any, @Param('id') id: string) {
     await this.qaService.deleteSavedQA(id, req.user.sub);
     return { message: 'Saved Q&A deleted successfully' };
+  }
+
+  @Get('search')
+  async searchDocuments(
+    @Request() req: any,
+    @Query('q') query: string,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    if (!query) {
+      return { sources: [], message: 'Query parameter is required' };
+    }
+    return this.qaService.searchDocuments(req.user.sub, query, limit);
   }
 }

@@ -1,93 +1,145 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { IngestionsService } from '../../ingestions/ingestions.service';
 import { DocumentSource } from '../types/qa.types';
 
 @Injectable()
 export class DocumentSearchService {
   private readonly logger = new Logger(DocumentSearchService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ingestionsService: IngestionsService,
+  ) {}
 
   async searchDocuments(
     query: string,
     limit: number = 5,
+    userId?: string,
   ): Promise<DocumentSource[]> {
     try {
-      // Extract keywords from query
-      const keywords = this.extractKeywords(query);
-
-      // Search in processed documents
-      const documents = await this.prisma.document.findMany({
-        where: {
-          status: 'processed',
-          OR: [
-            {
-              title: {
-                contains: query,
-                mode: 'insensitive',
-              },
-            },
-            {
-              description: {
-                contains: query,
-                mode: 'insensitive',
-              },
-            },
-            {
-              tags: {
-                hasSome: keywords,
-              },
-            },
-          ],
-        },
-        include: {
-          ingestions: {
-            where: {
-              status: 'completed',
-            },
-            orderBy: {
-              completedAt: 'desc',
-            },
-            take: 1,
-          },
-        },
-        take: limit,
-        orderBy: {
-          updatedAt: 'desc',
-        },
-      });
-
-      // Convert to DocumentSource format
-      const sources: DocumentSource[] = [];
-
-      for (const doc of documents) {
-        const latestIngestion = doc.ingestions[0];
-        if (latestIngestion?.logs) {
-          const ingestionData = latestIngestion.logs as any;
-
-          // Extract relevant text excerpt
-          const excerpt = this.extractRelevantExcerpt(
-            ingestionData.extractedText || doc.description || '',
+      // If userId is provided, use the enhanced search from IngestionService
+      if (userId) {
+        const searchResults =
+          await this.ingestionsService.searchProcessedContent(
             query,
-            200,
+            userId,
+            limit,
           );
 
-          sources.push({
-            documentId: doc.id,
-            documentTitle: doc.title,
-            excerpt,
-            relevanceScore: this.calculateRelevanceScore(doc, query, keywords),
-            context: doc.category || 'Document',
+        // Convert to DocumentSource format
+        const sources: DocumentSource[] = [];
+
+        for (const result of searchResults) {
+          // Get document details
+          const document = await this.prisma.document.findUnique({
+            where: { id: result.documentId },
+            select: {
+              id: true,
+              title: true,
+              category: true,
+            },
           });
+
+          if (document) {
+            sources.push({
+              documentId: result.documentId,
+              documentTitle: document.title,
+              excerpt: result.excerpt,
+              relevanceScore: result.relevanceScore,
+              context: `${document.category || 'Document'} (${result.matchType})`,
+            });
+          }
         }
+
+        return sources;
       }
 
-      // Sort by relevance score
-      return sources.sort((a, b) => b.relevanceScore - a.relevanceScore);
+      // Fallback to basic search for backward compatibility
+      return this.basicDocumentSearch(query, limit);
     } catch (error) {
       this.logger.error('Error searching documents:', error);
       return [];
     }
+  }
+
+  private async basicDocumentSearch(
+    query: string,
+    limit: number,
+  ): Promise<DocumentSource[]> {
+    // Extract keywords from query
+    const keywords = this.extractKeywords(query);
+
+    // Search in processed documents
+    const documents = await this.prisma.document.findMany({
+      where: {
+        status: 'processed',
+        OR: [
+          {
+            title: {
+              contains: query,
+              mode: 'insensitive',
+            },
+          },
+          {
+            description: {
+              contains: query,
+              mode: 'insensitive',
+            },
+          },
+          {
+            tags: {
+              hasSome: keywords,
+            },
+          },
+        ],
+      },
+      include: {
+        ingestions: {
+          where: {
+            status: 'completed',
+          },
+          orderBy: {
+            completedAt: 'desc',
+          },
+          take: 1,
+        },
+      },
+      take: limit,
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    // Convert to DocumentSource format
+    const sources: DocumentSource[] = [];
+
+    for (const doc of documents) {
+      const latestIngestion = doc.ingestions[0];
+      if (latestIngestion?.logs) {
+        const ingestionData = latestIngestion.logs as any;
+
+        // Extract relevant text excerpt from processed content
+        const fullText =
+          ingestionData.processingResult?.extractedText ||
+          ingestionData.extractedText ||
+          doc.description ||
+          '';
+
+        const excerpt = this.extractRelevantExcerpt(fullText, query, 200);
+
+        sources.push({
+          documentId: doc.id,
+          documentTitle: doc.title,
+          excerpt,
+          relevanceScore: this.calculateRelevanceScore(doc, query, keywords),
+          context: doc.category || 'Document',
+        });
+      }
+    }
+
+    // Sort by relevance score
+    return sources.sort((a, b) => b.relevanceScore - a.relevanceScore);
   }
 
   private extractKeywords(query: string): string[] {
@@ -153,6 +205,17 @@ export class DocumentSearchService {
       keywords.includes(tag.toLowerCase()),
     );
     score += matchingTags.length * 0.1;
+
+    // Keyword matches from processing (if available)
+    const latestIngestion = document.ingestions?.[0];
+    if (latestIngestion?.logs) {
+      const ingestionData = latestIngestion.logs as any;
+      const processedKeywords = ingestionData.processingResult?.keywords || [];
+      const keywordMatches = processedKeywords.filter((keyword: string) =>
+        keywords.includes(keyword.toLowerCase()),
+      );
+      score += keywordMatches.length * 0.05;
+    }
 
     // Recency bonus
     const daysSinceUpdate =

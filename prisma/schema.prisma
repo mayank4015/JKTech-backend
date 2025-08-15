@@ -36,7 +36,7 @@ model Document {
   fileType    String   @db.VarChar(100) @map("file_type")
   fileSize    BigInt   @map("file_size")
   uploadedBy  String   @db.Uuid @map("uploaded_by")
-  status      String   @db.VarChar(50) @default("pending") // pending, processed, failed
+  status      String   @db.VarChar(50) @default("uploaded") // uploaded, pending, processed, failed
   tags        String[] @default([])
   category    String?  @db.VarChar(100)
   createdAt   DateTime @default(now()) @map("created_at")
