@@ -70,29 +70,10 @@ export class DocumentSearchService {
     // Extract keywords from query
     const keywords = this.extractKeywords(query);
 
-    // Search in processed documents
+    // Get all processed documents for partial matching
     const documents = await this.prisma.document.findMany({
       where: {
         status: 'processed',
-        OR: [
-          {
-            title: {
-              contains: query,
-              mode: 'insensitive',
-            },
-          },
-          {
-            description: {
-              contains: query,
-              mode: 'insensitive',
-            },
-          },
-          {
-            tags: {
-              hasSome: keywords,
-            },
-          },
-        ],
       },
       include: {
         ingestions: {
@@ -105,13 +86,12 @@ export class DocumentSearchService {
           take: 1,
         },
       },
-      take: limit,
       orderBy: {
         updatedAt: 'desc',
       },
     });
 
-    // Convert to DocumentSource format
+    // Convert to DocumentSource format with partial matching
     const sources: DocumentSource[] = [];
 
     for (const doc of documents) {
@@ -126,20 +106,37 @@ export class DocumentSearchService {
           doc.description ||
           '';
 
-        const excerpt = this.extractRelevantExcerpt(fullText, query, 200);
+        // Calculate relevance score with partial matching
+        const relevanceScore = this.calculatePartialRelevanceScore(
+          doc,
+          query,
+          keywords,
+          fullText,
+        );
 
-        sources.push({
-          documentId: doc.id,
-          documentTitle: doc.title,
-          excerpt,
-          relevanceScore: this.calculateRelevanceScore(doc, query, keywords),
-          context: doc.category || 'Document',
-        });
+        // Only include documents with some relevance
+        if (relevanceScore > 0) {
+          const excerpt = this.extractRelevantExcerptPartial(
+            fullText,
+            keywords,
+            200,
+          );
+
+          sources.push({
+            documentId: doc.id,
+            documentTitle: doc.title,
+            excerpt,
+            relevanceScore,
+            context: doc.category || 'Document',
+          });
+        }
       }
     }
 
-    // Sort by relevance score
-    return sources.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    // Sort by relevance score and limit results
+    return sources
+      .sort((a, b) => b.relevanceScore - a.relevanceScore)
+      .slice(0, limit);
   }
 
   private extractKeywords(query: string): string[] {
@@ -224,5 +221,170 @@ export class DocumentSearchService {
     score += Math.max(0, 0.2 - daysSinceUpdate * 0.01);
 
     return Math.min(1, score);
+  }
+
+  /**
+   * Calculate relevance score with partial matching support
+   */
+  private calculatePartialRelevanceScore(
+    document: any,
+    query: string,
+    keywords: string[],
+    fullText: string,
+  ): number {
+    let score = 0;
+    const queryLower = query.toLowerCase();
+
+    // Title partial match (highest weight)
+    const titleMatch = this.calculateTextPartialMatch(document.title, keywords);
+    score += titleMatch.score * 0.5;
+
+    // Description partial match
+    if (document.description) {
+      const descMatch = this.calculateTextPartialMatch(
+        document.description,
+        keywords,
+      );
+      score += descMatch.score * 0.3;
+    }
+
+    // Full text partial match
+    if (fullText) {
+      const textMatch = this.calculateTextPartialMatch(fullText, keywords);
+      score += textMatch.score * 0.4;
+    }
+
+    // Tag partial matches
+    const tagMatches = document.tags.filter((tag: string) => {
+      const tagLower = tag.toLowerCase();
+      return keywords.some(
+        (keyword) => tagLower.includes(keyword) || keyword.includes(tagLower),
+      );
+    });
+    score += tagMatches.length * 0.1;
+
+    // Keyword matches from processing (if available)
+    const latestIngestion = document.ingestions?.[0];
+    if (latestIngestion?.logs) {
+      const ingestionData = latestIngestion.logs as any;
+      const processedKeywords = ingestionData.processingResult?.keywords || [];
+      const keywordMatches = processedKeywords.filter((keyword: string) => {
+        const keywordLower = keyword.toLowerCase();
+        return keywords.some(
+          (queryKeyword) =>
+            keywordLower.includes(queryKeyword) ||
+            queryKeyword.includes(keywordLower),
+        );
+      });
+      score += keywordMatches.length * 0.05;
+    }
+
+    // Recency bonus
+    const daysSinceUpdate =
+      (Date.now() - new Date(document.updatedAt).getTime()) /
+      (1000 * 60 * 60 * 24);
+    score += Math.max(0, 0.2 - daysSinceUpdate * 0.01);
+
+    return Math.min(1, score);
+  }
+
+  /**
+   * Calculate partial match score for text against query keywords
+   */
+  private calculateTextPartialMatch(
+    text: string,
+    queryKeywords: string[],
+  ): { score: number; matchedWords: string[] } {
+    if (!text || queryKeywords.length === 0) {
+      return { score: 0, matchedWords: [] };
+    }
+
+    const textLower = text.toLowerCase();
+    const textWords = textLower.split(/\s+/);
+    const matchedWords: string[] = [];
+    let totalMatches = 0;
+
+    for (const queryWord of queryKeywords) {
+      // Check for exact word matches first (higher score)
+      if (textWords.some((word) => word === queryWord)) {
+        totalMatches += 1.0;
+        matchedWords.push(queryWord);
+      }
+      // Check for partial matches (substring matching)
+      else if (
+        textWords.some(
+          (word) => word.includes(queryWord) || queryWord.includes(word),
+        )
+      ) {
+        totalMatches += 0.7;
+        matchedWords.push(queryWord);
+      }
+      // Check if query word is contained anywhere in the text
+      else if (textLower.includes(queryWord)) {
+        totalMatches += 0.5;
+        matchedWords.push(queryWord);
+      }
+    }
+
+    const score =
+      queryKeywords.length > 0 ? totalMatches / queryKeywords.length : 0;
+    return { score: Math.min(1, score), matchedWords };
+  }
+
+  /**
+   * Extract relevant excerpt with partial matching support
+   */
+  private extractRelevantExcerptPartial(
+    text: string,
+    queryKeywords: string[],
+    maxLength: number,
+  ): string {
+    if (!text) return 'No content available';
+
+    const textLower = text.toLowerCase();
+    let bestPosition = -1;
+    let bestScore = 0;
+
+    // Find the best position that contains the most query keywords
+    for (let i = 0; i < text.length - maxLength; i += 50) {
+      const segment = textLower.substring(i, i + maxLength);
+      let segmentScore = 0;
+
+      for (const keyword of queryKeywords) {
+        if (segment.includes(keyword)) {
+          segmentScore += 1;
+        }
+      }
+
+      if (segmentScore > bestScore) {
+        bestScore = segmentScore;
+        bestPosition = i;
+      }
+    }
+
+    // If no good position found, try to find any keyword match
+    if (bestPosition === -1) {
+      for (const keyword of queryKeywords) {
+        const keywordIndex = textLower.indexOf(keyword);
+        if (keywordIndex !== -1) {
+          bestPosition = Math.max(0, keywordIndex - maxLength / 2);
+          break;
+        }
+      }
+    }
+
+    // Fallback to beginning if no matches found
+    if (bestPosition === -1) {
+      bestPosition = 0;
+    }
+
+    const start = bestPosition;
+    const end = Math.min(text.length, start + maxLength);
+    let excerpt = text.substring(start, end);
+
+    if (start > 0) excerpt = '...' + excerpt;
+    if (end < text.length) excerpt = excerpt + '...';
+
+    return excerpt;
   }
 }

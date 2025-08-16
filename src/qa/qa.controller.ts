@@ -28,7 +28,7 @@ export class QAController {
 
   @Post('ask')
   async askQuestion(@Request() req: any, @Body() dto: AskQuestionDto) {
-    return this.qaService.askQuestion(req.user.sub, dto);
+    return this.qaService.askQuestion(req.user.id, dto);
   }
 
   @Post('conversations')
@@ -36,7 +36,7 @@ export class QAController {
     @Request() req: any,
     @Body() dto: CreateConversationDto,
   ) {
-    return this.qaService.createConversation(req.user.sub, dto);
+    return this.qaService.createConversation(req.user.id, dto);
   }
 
   @Get('conversations')
@@ -46,12 +46,12 @@ export class QAController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query() filters: QAFiltersDto,
   ) {
-    return this.qaService.getConversations(req.user.sub, page, limit, filters);
+    return this.qaService.getConversations(req.user.id, page, limit, filters);
   }
 
   @Get('conversations/:id')
   async getConversationById(@Request() req: any, @Param('id') id: string) {
-    return this.qaService.getConversationById(id, req.user.sub);
+    return this.qaService.getConversationById(id, req.user.id);
   }
 
   @Put('conversations/:id')
@@ -60,18 +60,18 @@ export class QAController {
     @Param('id') id: string,
     @Body() updates: any,
   ) {
-    return this.qaService.updateConversation(id, req.user.sub, updates);
+    return this.qaService.updateConversation(id, req.user.id, updates);
   }
 
   @Delete('conversations/:id')
   async deleteConversation(@Request() req: any, @Param('id') id: string) {
-    await this.qaService.deleteConversation(id, req.user.sub);
+    await this.qaService.deleteConversation(id, req.user.id);
     return { message: 'Conversation deleted successfully' };
   }
 
   @Post('save')
   async saveQA(@Request() req: any, @Body() dto: SaveQADto) {
-    return this.qaService.saveQA(req.user.sub, dto);
+    return this.qaService.saveQA(req.user.id, dto);
   }
 
   @Get('saved')
@@ -81,12 +81,12 @@ export class QAController {
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
     @Query() filters: QAFiltersDto,
   ) {
-    return this.qaService.getSavedQAs(req.user.sub, page, limit, filters);
+    return this.qaService.getSavedQAs(req.user.id, page, limit, filters);
   }
 
   @Delete('saved/:id')
   async deleteSavedQA(@Request() req: any, @Param('id') id: string) {
-    await this.qaService.deleteSavedQA(id, req.user.sub);
+    await this.qaService.deleteSavedQA(id, req.user.id);
     return { message: 'Saved Q&A deleted successfully' };
   }
 
@@ -99,11 +99,11 @@ export class QAController {
     if (!query) {
       return { sources: [], message: 'Query parameter is required' };
     }
-    return this.qaService.searchDocuments(req.user.sub, query, limit);
+    return this.qaService.searchDocuments(req.user.id, query, limit);
   }
 
   @Get('stats')
   async getStats(@Request() req: any) {
-    return this.qaService.getStats(req.user.sub);
+    return this.qaService.getStats(req.user.id);
   }
 }

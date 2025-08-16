@@ -864,9 +864,13 @@ export class IngestionsService {
       let bestMatch: any = null;
       let bestScore = 0;
 
-      // Check title match
-      if (document.title.toLowerCase().includes(queryLower)) {
-        const score = 0.9;
+      // Check title match with partial matching
+      const titleMatch = this.calculatePartialMatch(
+        document.title,
+        queryKeywords,
+      );
+      if (titleMatch.score > 0) {
+        const score = 0.9 * titleMatch.score;
         if (score > bestScore) {
           bestScore = score;
           bestMatch = {
@@ -876,46 +880,60 @@ export class IngestionsService {
         }
       }
 
-      // Check content match
+      // Check content match with partial matching
       const extractedText =
         processingResult.extractedText || ingestionData.extractedText;
-      if (extractedText && extractedText.toLowerCase().includes(queryLower)) {
-        const score = 0.7;
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = {
-            excerpt: this.extractRelevantExcerpt(extractedText, query, 200),
-            matchType: 'content' as const,
-          };
+      if (extractedText) {
+        const contentMatch = this.calculatePartialMatch(
+          extractedText,
+          queryKeywords,
+        );
+        if (contentMatch.score > 0) {
+          const score = 0.7 * contentMatch.score;
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = {
+              excerpt: this.extractRelevantExcerptPartial(
+                extractedText,
+                queryKeywords,
+                200,
+              ),
+              matchType: 'content' as const,
+            };
+          }
         }
       }
 
-      // Check summary match
-      if (
-        processingResult.summary &&
-        processingResult.summary.toLowerCase().includes(queryLower)
-      ) {
-        const score = 0.6;
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = {
-            excerpt: processingResult.summary,
-            matchType: 'summary' as const,
-          };
+      // Check summary match with partial matching
+      if (processingResult.summary) {
+        const summaryMatch = this.calculatePartialMatch(
+          processingResult.summary,
+          queryKeywords,
+        );
+        if (summaryMatch.score > 0) {
+          const score = 0.6 * summaryMatch.score;
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = {
+              excerpt: processingResult.summary,
+              matchType: 'summary' as const,
+            };
+          }
         }
       }
 
-      // Check keywords match
+      // Check keywords match with partial matching
       const keywords = processingResult.keywords || [];
-      const matchingKeywords = keywords.filter((keyword: string) =>
-        queryKeywords.includes(keyword.toLowerCase()),
+      const keywordMatch = this.calculateKeywordPartialMatch(
+        keywords,
+        queryKeywords,
       );
-      if (matchingKeywords.length > 0) {
-        const score = 0.5 + matchingKeywords.length * 0.1;
+      if (keywordMatch.matchingKeywords.length > 0) {
+        const score = 0.5 + keywordMatch.score * 0.3;
         if (score > bestScore) {
           bestScore = score;
           bestMatch = {
-            excerpt: `Keywords: ${matchingKeywords.join(', ')}`,
+            excerpt: `Keywords: ${keywordMatch.matchingKeywords.join(', ')}`,
             matchType: 'keywords' as const,
           };
         }
@@ -961,6 +979,154 @@ export class IngestionsService {
     const start = Math.max(0, queryIndex - maxLength / 2);
     const end = Math.min(text.length, start + maxLength);
 
+    let excerpt = text.substring(start, end);
+
+    if (start > 0) excerpt = '...' + excerpt;
+    if (end < text.length) excerpt = excerpt + '...';
+
+    return excerpt;
+  }
+
+  /**
+   * Calculate partial match score for text against query keywords
+   */
+  private calculatePartialMatch(
+    text: string,
+    queryKeywords: string[],
+  ): { score: number; matchedWords: string[] } {
+    if (!text || queryKeywords.length === 0) {
+      return { score: 0, matchedWords: [] };
+    }
+
+    const textLower = text.toLowerCase();
+    const textWords = textLower.split(/\s+/);
+    const matchedWords: string[] = [];
+    let totalMatches = 0;
+
+    for (const queryWord of queryKeywords) {
+      let wordMatched = false;
+
+      // Check for exact word matches first (higher score)
+      if (textWords.some((word) => word === queryWord)) {
+        totalMatches += 1.0;
+        matchedWords.push(queryWord);
+        wordMatched = true;
+      }
+      // Check for partial matches (substring matching)
+      else if (
+        textWords.some(
+          (word) => word.includes(queryWord) || queryWord.includes(word),
+        )
+      ) {
+        totalMatches += 0.7;
+        matchedWords.push(queryWord);
+        wordMatched = true;
+      }
+      // Check if query word is contained anywhere in the text
+      else if (textLower.includes(queryWord)) {
+        totalMatches += 0.5;
+        matchedWords.push(queryWord);
+        wordMatched = true;
+      }
+    }
+
+    const score =
+      queryKeywords.length > 0 ? totalMatches / queryKeywords.length : 0;
+    return { score: Math.min(1, score), matchedWords };
+  }
+
+  /**
+   * Calculate partial match for keywords specifically
+   */
+  private calculateKeywordPartialMatch(
+    keywords: string[],
+    queryKeywords: string[],
+  ): { score: number; matchingKeywords: string[] } {
+    if (!keywords || keywords.length === 0 || queryKeywords.length === 0) {
+      return { score: 0, matchingKeywords: [] };
+    }
+
+    const matchingKeywords: string[] = [];
+    let totalMatches = 0;
+
+    for (const queryWord of queryKeywords) {
+      for (const keyword of keywords) {
+        const keywordLower = keyword.toLowerCase();
+
+        // Exact match
+        if (keywordLower === queryWord) {
+          totalMatches += 1.0;
+          if (!matchingKeywords.includes(keyword)) {
+            matchingKeywords.push(keyword);
+          }
+        }
+        // Partial match (either direction)
+        else if (
+          keywordLower.includes(queryWord) ||
+          queryWord.includes(keywordLower)
+        ) {
+          totalMatches += 0.7;
+          if (!matchingKeywords.includes(keyword)) {
+            matchingKeywords.push(keyword);
+          }
+        }
+      }
+    }
+
+    const score =
+      queryKeywords.length > 0 ? totalMatches / queryKeywords.length : 0;
+    return { score: Math.min(1, score), matchingKeywords };
+  }
+
+  /**
+   * Extract relevant excerpt with partial matching support
+   */
+  private extractRelevantExcerptPartial(
+    text: string,
+    queryKeywords: string[],
+    maxLength: number,
+  ): string {
+    if (!text) return 'No content available';
+
+    const textLower = text.toLowerCase();
+    let bestPosition = -1;
+    let bestScore = 0;
+
+    // Find the best position that contains the most query keywords
+    for (let i = 0; i < text.length - maxLength; i += 50) {
+      const segment = textLower.substring(i, i + maxLength);
+      let segmentScore = 0;
+
+      for (const keyword of queryKeywords) {
+        if (segment.includes(keyword)) {
+          segmentScore += 1;
+        }
+      }
+
+      if (segmentScore > bestScore) {
+        bestScore = segmentScore;
+        bestPosition = i;
+      }
+    }
+
+    // If no good position found, try to find any keyword match
+    if (bestPosition === -1) {
+      for (const keyword of queryKeywords) {
+        const keywordIndex = textLower.indexOf(keyword);
+        if (keywordIndex !== -1) {
+          bestPosition = Math.max(0, keywordIndex - maxLength / 2);
+          break;
+        }
+      }
+    }
+
+    // Fallback to beginning if no matches found
+    if (bestPosition === -1) {
+      bestPosition = 0;
+    }
+
+    const start = bestPosition;
+    const end = Math.min(text.length, start + maxLength);
     let excerpt = text.substring(start, end);
 
     if (start > 0) excerpt = '...' + excerpt;
