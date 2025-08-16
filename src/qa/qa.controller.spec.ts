@@ -28,6 +28,7 @@ describe('QAController', () => {
 
   const mockRequest = {
     user: {
+      id: mockUser.id,
       sub: mockUser.id,
       email: mockUser.email,
       name: mockUser.name,

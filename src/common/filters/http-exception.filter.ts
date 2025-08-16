@@ -8,16 +8,15 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
-import { LoggerService } from '../logger/logger.service';
+import { HttpLoggerService } from '../logger/http-logger.service';
 import { AsyncStorageProvider } from '../providers/async-storage.provider';
-import { sanitizeForLogging } from '../utils/safe-json.util';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
 
   constructor(
-    private readonly loggerService: LoggerService,
+    private readonly httpLogger: HttpLoggerService,
     private readonly asyncStorage: AsyncStorageProvider,
   ) {}
 
@@ -55,19 +54,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       requestId: this.asyncStorage.getRequestId(),
     };
 
-    // Log the error with context
-    this.loggerService.logError(
+    // Log the error using HttpLoggerService
+    this.httpLogger.logHttpError(
       exception instanceof Error ? exception : new Error(String(exception)),
-      HttpExceptionFilter.name,
+      request,
+      response,
       {
         statusCode: status,
-        path: request.url,
-        method: request.method,
-        query: sanitizeForLogging(request.query),
-        body: sanitizeForLogging(request.body),
-        headers: sanitizeForLogging(request.headers),
-        ip: request.ip,
-        userAgent: request.get('User-Agent'),
+        errorResponse,
       },
     );
 

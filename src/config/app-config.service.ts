@@ -9,6 +9,8 @@ const baseEnvSchema = z.object({
   // Server Configuration
   PORT: z.coerce.number().min(1).max(65535).default(8080),
   FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+  TRACE_DOMAIN: z.string().url().optional(),
+  LOGS_DIR: z.string().default('./logs'),
   NODE_ENV: z
     .enum(['development', 'production', 'test'])
     .default('development'),
@@ -91,6 +93,8 @@ export interface ValidatedConfig {
   server: {
     port: number;
     frontendUrl: string;
+    traceDomain?: string;
+    logsDir: string;
     nodeEnv: string;
     isProduction: boolean;
     isDevelopment: boolean;
@@ -232,6 +236,8 @@ export class AppConfigService implements OnModuleInit {
     return {
       PORT: this.configService.get('PORT'),
       FRONTEND_URL: this.configService.get('FRONTEND_URL'),
+      TRACE_DOMAIN: this.configService.get('TRACE_DOMAIN'),
+      LOGS_DIR: this.configService.get('LOGS_DIR'),
       NODE_ENV: this.configService.get('NODE_ENV'),
       DATABASE_URL: this.configService.get('DATABASE_URL'),
       DIRECT_URL: this.configService.get('DIRECT_URL'),
@@ -282,6 +288,8 @@ export class AppConfigService implements OnModuleInit {
       server: {
         port: env.PORT,
         frontendUrl: env.FRONTEND_URL,
+        traceDomain: env.TRACE_DOMAIN,
+        logsDir: env.LOGS_DIR,
         nodeEnv: env.NODE_ENV,
         isProduction: env.NODE_ENV === 'production',
         isDevelopment:
@@ -364,6 +372,14 @@ export class AppConfigService implements OnModuleInit {
 
   getFrontendUrl(): string {
     return this.config.server.frontendUrl;
+  }
+
+  getTraceDomain(): string | undefined {
+    return this.config.server.traceDomain;
+  }
+
+  getLogsDir(): string {
+    return this.config.server.logsDir;
   }
 
   // Database Configuration

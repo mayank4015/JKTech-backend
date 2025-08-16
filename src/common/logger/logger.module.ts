@@ -8,6 +8,7 @@ import { AppConfigService } from '../../config/app-config.service';
 import { ProvidersModule } from '../providers/providers.module';
 
 import { LoggerService } from './logger.service';
+import { HttpLoggerService } from './http-logger.service';
 
 @Module({
   imports: [
@@ -37,53 +38,34 @@ import { LoggerService } from './logger.service';
           }),
         ];
 
-        if (isProduction) {
-          // Application logs
-          transports.push(
-            new DailyRotateFile({
-              filename: 'logs/application-%DATE%.log',
-              datePattern: 'YYYY-MM-DD',
-              zippedArchive: true,
-              maxSize: '20m',
-              maxFiles: '14d',
-              format: winston.format.combine(
-                winston.format.timestamp(),
-                winston.format.json(),
-              ),
-            }),
-          );
+        // System logs (NestJS startup, module initialization, etc.) - Single persistent file
+        transports.push(
+          new winston.transports.File({
+            filename: 'logs/system.log',
+            maxsize: 50 * 1024 * 1024, // 50MB max file size
+            maxFiles: 5, // Keep 5 backup files
+            tailable: true,
+            format: winston.format.combine(
+              winston.format.timestamp(),
+              winston.format.json(),
+            ),
+          }),
+        );
 
-          // Error logs
-          transports.push(
-            new DailyRotateFile({
-              filename: 'logs/error-%DATE%.log',
-              datePattern: 'YYYY-MM-DD',
-              zippedArchive: true,
-              maxSize: '20m',
-              maxFiles: '30d',
-              level: 'error',
-              format: winston.format.combine(
-                winston.format.timestamp(),
-                winston.format.json(),
-              ),
-            }),
-          );
-
-          // Trace logs
-          transports.push(
-            new DailyRotateFile({
-              filename: 'logs/trace-%DATE%.log',
-              datePattern: 'YYYY-MM-DD',
-              zippedArchive: true,
-              maxSize: '20m',
-              maxFiles: '7d',
-              format: winston.format.combine(
-                winston.format.timestamp(),
-                winston.format.json(),
-              ),
-            }),
-          );
-        }
+        // System error logs - Single persistent file
+        transports.push(
+          new winston.transports.File({
+            filename: 'logs/error.log',
+            maxsize: 50 * 1024 * 1024, // 50MB max file size
+            maxFiles: 5, // Keep 5 backup files
+            tailable: true,
+            level: 'error',
+            format: winston.format.combine(
+              winston.format.timestamp(),
+              winston.format.json(),
+            ),
+          }),
+        );
 
         return {
           level: isProduction ? 'info' : 'debug',
@@ -95,38 +77,28 @@ import { LoggerService } from './logger.service';
           transports,
           exceptionHandlers: [
             new winston.transports.Console(),
-            ...(isProduction
-              ? [
-                  new DailyRotateFile({
-                    filename: 'logs/exceptions-%DATE%.log',
-                    datePattern: 'YYYY-MM-DD',
-                    zippedArchive: true,
-                    maxSize: '20m',
-                    maxFiles: '30d',
-                  }),
-                ]
-              : []),
+            new winston.transports.File({
+              filename: 'logs/exceptions.log',
+              maxsize: 50 * 1024 * 1024, // 50MB max file size
+              maxFiles: 5,
+              tailable: true,
+            }),
           ],
           rejectionHandlers: [
             new winston.transports.Console(),
-            ...(isProduction
-              ? [
-                  new DailyRotateFile({
-                    filename: 'logs/rejections-%DATE%.log',
-                    datePattern: 'YYYY-MM-DD',
-                    zippedArchive: true,
-                    maxSize: '20m',
-                    maxFiles: '30d',
-                  }),
-                ]
-              : []),
+            new winston.transports.File({
+              filename: 'logs/rejections.log',
+              maxsize: 50 * 1024 * 1024, // 50MB max file size
+              maxFiles: 5,
+              tailable: true,
+            }),
           ],
         };
       },
       inject: [AppConfigService],
     }),
   ],
-  providers: [LoggerService],
-  exports: [LoggerService],
+  providers: [LoggerService, HttpLoggerService],
+  exports: [LoggerService, HttpLoggerService],
 })
 export class LoggerModule {}

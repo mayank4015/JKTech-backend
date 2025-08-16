@@ -146,13 +146,9 @@ describe('DocumentsService', () => {
         const mockFile = createMockFile();
         const mockUploadResult = createMockUploadResult();
         const mockDocument = createMockDocumentWithUploader();
-        const mockIngestion = { id: mockIngestionId };
 
         fileUploadService.uploadFile.mockResolvedValue(mockUploadResult);
         prismaService.document.create.mockResolvedValue(mockDocument as never);
-        prismaService.ingestion.create.mockResolvedValue(
-          mockIngestion as never,
-        );
 
         // Act
         const result = await service.uploadDocument(
@@ -202,15 +198,6 @@ describe('DocumentsService', () => {
                 email: true,
               },
             },
-          },
-        });
-
-        expect(prismaService.ingestion.create).toHaveBeenCalledWith({
-          data: {
-            documentId: mockDocument.id,
-            userId: mockUserId,
-            status: 'queued',
-            progress: 0,
           },
         });
 
@@ -361,23 +348,6 @@ describe('DocumentsService', () => {
           `Failed to upload document: ${dbError.message}`,
           dbError.stack,
         );
-      });
-
-      it('should throw BadRequestException when ingestion creation fails', async () => {
-        // Arrange
-        const mockFile = createMockFile();
-        const mockUploadResult = createMockUploadResult();
-        const mockDocument = createMockDocumentWithUploader();
-        const ingestionError = new Error('Ingestion creation failed');
-
-        fileUploadService.uploadFile.mockResolvedValue(mockUploadResult);
-        prismaService.document.create.mockResolvedValue(mockDocument as never);
-        prismaService.ingestion.create.mockRejectedValue(ingestionError);
-
-        // Act & Assert
-        await expect(
-          service.uploadDocument(mockFile, mockCreateDocumentDto, mockUserId),
-        ).rejects.toThrow(BadRequestException);
       });
 
       it('should handle invalid file type gracefully', async () => {

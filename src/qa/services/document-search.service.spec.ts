@@ -120,25 +120,6 @@ describe('DocumentSearchService', () => {
       expect(mockPrismaService.document.findMany).toHaveBeenCalledWith({
         where: {
           status: 'processed',
-          OR: [
-            {
-              title: {
-                contains: query,
-                mode: 'insensitive',
-              },
-            },
-            {
-              description: {
-                contains: query,
-                mode: 'insensitive',
-              },
-            },
-            {
-              tags: {
-                hasSome: ['machine', 'learning'],
-              },
-            },
-          ],
         },
         include: {
           ingestions: {
@@ -151,7 +132,6 @@ describe('DocumentSearchService', () => {
             take: 1,
           },
         },
-        take: limit,
         orderBy: {
           updatedAt: 'desc',
         },

@@ -6,10 +6,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { tap, catchError } from 'rxjs/operators';
+import { throwError } from 'rxjs';
 import { Request, Response } from 'express';
 
-import { LoggerService } from '../logger/logger.service';
+import { HttpLoggerService } from '../logger/http-logger.service';
 import { AsyncStorageProvider } from '../providers/async-storage.provider';
 
 @Injectable()
@@ -17,7 +18,7 @@ export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
 
   constructor(
-    private readonly loggerService: LoggerService,
+    private readonly httpLogger: HttpLoggerService,
     private readonly asyncStorage: AsyncStorageProvider,
   ) {}
 
@@ -28,18 +29,29 @@ export class LoggingInterceptor implements NestInterceptor {
     const startTime = this.asyncStorage.getStartTime() || Date.now();
 
     return next.handle().pipe(
-      tap(() => {
+      tap((responseBody) => {
         const responseTime = Date.now() - startTime;
 
-        this.loggerService.logRequest(request, response, responseTime);
+        // Log HTTP request summary (one-liner)
+        this.httpLogger.logHttpRequest(request, response, responseTime);
 
-        // Log trace event for successful requests
-        this.loggerService.logTrace('Request completed', {
-          method: request.method,
-          url: request.url,
-          statusCode: response.statusCode,
+        // Log detailed trace data
+        this.httpLogger.logHttpTrace(
+          request,
+          response,
+          responseTime,
+          responseBody,
+        );
+      }),
+      catchError((error) => {
+        const responseTime = Date.now() - startTime;
+
+        // Log HTTP error
+        this.httpLogger.logHttpError(error, request, response, {
           responseTime,
         });
+
+        return throwError(() => error);
       }),
     );
   }
