@@ -16,9 +16,16 @@ describe('QAService', () => {
     question: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      count: jest.fn(),
+      findMany: jest.fn(),
     },
     answer: {
       create: jest.fn(),
+      count: jest.fn(),
+      aggregate: jest.fn(),
+    },
+    conversation: {
+      count: jest.fn(),
     },
     savedQA: {
       findUnique: jest.fn(),
@@ -412,6 +419,175 @@ describe('QAService', () => {
 
       expect(result.sources).toHaveLength(1);
       expect(result.sources[0]?.documentId).toBe('doc-1');
+    });
+  });
+
+  describe('getStats', () => {
+    it('should return QA statistics for a user', async () => {
+      const userId = 'test-user-id';
+      const mockStats = {
+        totalQuestions: 25,
+        totalAnswers: 23,
+        totalConversations: 8,
+        averageConfidence: 0.85,
+      };
+
+      const mockRecentQuestions = [
+        { createdAt: new Date('2024-01-15T10:00:00Z') },
+        { createdAt: new Date('2024-01-15T14:00:00Z') },
+        { createdAt: new Date('2024-01-14T09:00:00Z') },
+        { createdAt: new Date('2024-01-13T16:00:00Z') },
+      ];
+
+      // Mock the count queries
+      mockPrismaService.question.count.mockResolvedValue(
+        mockStats.totalQuestions,
+      );
+      mockPrismaService.answer.count.mockResolvedValue(mockStats.totalAnswers);
+      mockPrismaService.conversation.count.mockResolvedValue(
+        mockStats.totalConversations,
+      );
+
+      // Mock the aggregate query for average confidence
+      mockPrismaService.answer.aggregate.mockResolvedValue({
+        _avg: { confidence: mockStats.averageConfidence },
+      });
+
+      // Mock recent questions query
+      mockPrismaService.question.findMany.mockResolvedValue(
+        mockRecentQuestions,
+      );
+
+      const result = await service.getStats(userId);
+
+      // Verify count queries were called with correct parameters
+      expect(mockPrismaService.question.count).toHaveBeenCalledWith({
+        where: {
+          conversation: {
+            userId,
+          },
+        },
+      });
+
+      expect(mockPrismaService.answer.count).toHaveBeenCalledWith({
+        where: {
+          question: {
+            conversation: {
+              userId,
+            },
+          },
+        },
+      });
+
+      expect(mockPrismaService.conversation.count).toHaveBeenCalledWith({
+        where: {
+          userId,
+        },
+      });
+
+      // Verify aggregate query for confidence
+      expect(mockPrismaService.answer.aggregate).toHaveBeenCalledWith({
+        where: {
+          question: {
+            conversation: {
+              userId,
+            },
+          },
+        },
+        _avg: {
+          confidence: true,
+        },
+      });
+
+      // Verify recent questions query
+      expect(mockPrismaService.question.findMany).toHaveBeenCalledWith({
+        where: {
+          conversation: {
+            userId,
+          },
+          createdAt: {
+            gte: expect.any(Date),
+          },
+        },
+        select: {
+          createdAt: true,
+        },
+      });
+
+      // Verify the result structure
+      expect(result.data).toEqual({
+        totalQuestions: mockStats.totalQuestions,
+        totalAnswers: mockStats.totalAnswers,
+        totalConversations: mockStats.totalConversations,
+        averageConfidence: mockStats.averageConfidence,
+        popularTopics: [],
+        recentActivity: expect.arrayContaining([
+          expect.objectContaining({
+            date: expect.any(String),
+            questionCount: expect.any(Number),
+          }),
+        ]),
+      });
+    });
+
+    it('should handle zero average confidence when no answers exist', async () => {
+      const userId = 'test-user-id';
+
+      mockPrismaService.question.count.mockResolvedValue(0);
+      mockPrismaService.answer.count.mockResolvedValue(0);
+      mockPrismaService.conversation.count.mockResolvedValue(0);
+      mockPrismaService.answer.aggregate.mockResolvedValue({
+        _avg: { confidence: null },
+      });
+      mockPrismaService.question.findMany.mockResolvedValue([]);
+
+      const result = await service.getStats(userId);
+
+      expect(result.data.averageConfidence).toBe(0);
+      expect(result.data.totalQuestions).toBe(0);
+      expect(result.data.totalAnswers).toBe(0);
+      expect(result.data.totalConversations).toBe(0);
+      expect(result.data.recentActivity).toEqual([]);
+    });
+
+    it('should group recent activity by date correctly', async () => {
+      const userId = 'test-user-id';
+      const today = new Date('2024-01-15T12:00:00Z');
+      const yesterday = new Date('2024-01-14T12:00:00Z');
+
+      const mockRecentQuestions = [
+        { createdAt: new Date('2024-01-15T10:00:00Z') }, // Today
+        { createdAt: new Date('2024-01-15T14:00:00Z') }, // Today
+        { createdAt: new Date('2024-01-15T16:00:00Z') }, // Today
+        { createdAt: new Date('2024-01-14T09:00:00Z') }, // Yesterday
+        { createdAt: new Date('2024-01-14T15:00:00Z') }, // Yesterday
+      ];
+
+      mockPrismaService.question.count.mockResolvedValue(5);
+      mockPrismaService.answer.count.mockResolvedValue(5);
+      mockPrismaService.conversation.count.mockResolvedValue(2);
+      mockPrismaService.answer.aggregate.mockResolvedValue({
+        _avg: { confidence: 0.8 },
+      });
+      mockPrismaService.question.findMany.mockResolvedValue(
+        mockRecentQuestions,
+      );
+
+      const result = await service.getStats(userId);
+
+      // Should have activity for 2 different dates
+      expect(result.data.recentActivity).toHaveLength(2);
+
+      // Find the activity for each date
+      const todayActivity = result.data.recentActivity.find(
+        (activity) => activity.date === '2024-01-15',
+      );
+      const yesterdayActivity = result.data.recentActivity.find(
+        (activity) => activity.date === '2024-01-14',
+      );
+
+      expect(todayActivity?.questionCount).toBe(3);
+      expect(yesterdayActivity?.questionCount).toBe(2);
     });
   });
 });

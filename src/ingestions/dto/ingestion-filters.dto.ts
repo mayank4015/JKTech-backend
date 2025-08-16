@@ -11,6 +11,7 @@ export enum IngestionStatus {
   PROCESSING = 'processing',
   COMPLETED = 'completed',
   FAILED = 'failed',
+  CANCELLED = 'cancelled',
 }
 
 export enum IngestionSortBy {

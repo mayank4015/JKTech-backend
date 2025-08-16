@@ -119,16 +119,6 @@ export class DocumentsService {
         },
       });
 
-      // Create ingestion record for processing
-      await this.prisma.ingestion.create({
-        data: {
-          documentId: document.id,
-          userId: userId,
-          status: 'queued',
-          progress: 0,
-        },
-      });
-
       this.logger.debug(`Document uploaded successfully: ${document.id}`);
       const serializedDocument = serializeDocument(document);
       return transformDocumentForFrontend(serializedDocument);

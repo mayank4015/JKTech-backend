@@ -319,6 +319,93 @@ export class QAService {
     };
   }
 
+  async getStats(userId: string) {
+    // Get basic counts
+    const [totalQuestions, totalAnswers, totalConversations] =
+      await Promise.all([
+        this.prisma.question.count({
+          where: {
+            conversation: {
+              userId,
+            },
+          },
+        }),
+        this.prisma.answer.count({
+          where: {
+            question: {
+              conversation: {
+                userId,
+              },
+            },
+          },
+        }),
+        this.prisma.conversation.count({
+          where: {
+            userId,
+          },
+        }),
+      ]);
+
+    // Get average confidence
+    const avgConfidenceResult = await this.prisma.answer.aggregate({
+      where: {
+        question: {
+          conversation: {
+            userId,
+          },
+        },
+      },
+      _avg: {
+        confidence: true,
+      },
+    });
+
+    const averageConfidence = avgConfidenceResult._avg.confidence || 0;
+
+    // Get recent activity (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const recentQuestions = await this.prisma.question.findMany({
+      where: {
+        conversation: {
+          userId,
+        },
+        createdAt: {
+          gte: sevenDaysAgo,
+        },
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+
+    // Group by date
+    const activityMap = new Map<string, number>();
+    recentQuestions.forEach((question) => {
+      const date = question.createdAt.toISOString().split('T')[0];
+      activityMap.set(date, (activityMap.get(date) || 0) + 1);
+    });
+
+    const recentActivity = Array.from(activityMap.entries()).map(
+      ([date, questionCount]) => ({
+        date,
+        questionCount,
+      }),
+    );
+
+    return {
+      data: {
+        totalQuestions,
+        totalAnswers,
+        totalConversations,
+        averageConfidence,
+        popularTopics: [], // TODO: Implement topic analysis
+        recentActivity,
+      },
+    };
+  }
+
   private generateConversationTitle(question: string): string {
     // Generate a title from the first question
     const words = question.split(' ').slice(0, 8);

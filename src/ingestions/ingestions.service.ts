@@ -69,6 +69,7 @@ export interface IngestionStats {
   processing: number;
   queued: number;
   failed: number;
+  cancelled: number;
   averageProcessingTime: number;
   successRate: number;
 }
@@ -407,7 +408,8 @@ export class IngestionsService {
 
     if (
       (status === IngestionStatus.COMPLETED ||
-        status === IngestionStatus.FAILED) &&
+        status === IngestionStatus.FAILED ||
+        status === IngestionStatus.CANCELLED) &&
       !updateData.completedAt
     ) {
       updateData.completedAt = new Date();
@@ -424,7 +426,10 @@ export class IngestionsService {
         where: { id: updatedIngestion.documentId },
         data: { status: 'processed' },
       });
-    } else if (status === IngestionStatus.FAILED) {
+    } else if (
+      status === IngestionStatus.FAILED ||
+      status === IngestionStatus.CANCELLED
+    ) {
       await this.prisma.document.update({
         where: { id: updatedIngestion.documentId },
         data: { status: 'failed' },
@@ -454,6 +459,7 @@ export class IngestionsService {
       processing: 0,
       queued: 0,
       failed: 0,
+      cancelled: 0,
       averageProcessingTime: avgProcessingTime,
       successRate: 0,
     };
@@ -472,11 +478,14 @@ export class IngestionsService {
         case IngestionStatus.FAILED:
           stats.failed = stat._count.status;
           break;
+        case IngestionStatus.CANCELLED:
+          stats.cancelled = stat._count.status;
+          break;
       }
     });
 
     // Calculate success rate
-    const totalFinished = stats.completed + stats.failed;
+    const totalFinished = stats.completed + stats.failed + stats.cancelled;
     stats.successRate =
       totalFinished > 0
         ? Math.round((stats.completed / totalFinished) * 100)
@@ -651,23 +660,48 @@ export class IngestionsService {
       throw new ForbiddenException('Access denied to cancel this processing');
     }
 
-    const jobId = (ingestion.logs as any)?.jobId;
-    if (!jobId) {
+    // Check if ingestion is in a cancellable state
+    if (
+      ingestion.status !== IngestionStatus.QUEUED &&
+      ingestion.status !== IngestionStatus.PROCESSING
+    ) {
       throw new BadRequestException(
-        'No processing job found for this ingestion',
+        `Cannot cancel ingestion with status: ${ingestion.status}`,
       );
     }
 
-    // Cancel the job
-    const cancelled = await this.processingQueue.cancelJob(jobId);
+    let cancelled = false;
+    const jobId = (ingestion.logs as any)?.jobId;
+
+    if (jobId) {
+      // Try to cancel the job if it exists
+      try {
+        cancelled = await this.processingQueue.cancelJob(jobId);
+        this.logger.debug(`Job ${jobId} cancellation result: ${cancelled}`);
+      } catch (error) {
+        this.logger.warn(`Failed to cancel job ${jobId}: ${error.message}`);
+        // Continue with status update even if job cancellation fails
+        cancelled = true;
+      }
+    } else {
+      // If no job ID exists, the ingestion is likely still queued
+      // We can still cancel it by updating the status
+      this.logger.debug(
+        `No job ID found for ingestion ${ingestionId}, updating status directly`,
+      );
+      cancelled = true;
+    }
+
     if (cancelled) {
-      // Update ingestion status
+      // Update ingestion status to cancelled
       await this.updateIngestionStatus(
         ingestionId,
-        IngestionStatus.FAILED,
+        IngestionStatus.CANCELLED,
         ingestion.progress,
         'Processing cancelled by user',
       );
+
+      this.logger.debug(`Ingestion ${ingestionId} cancelled successfully`);
     }
 
     return cancelled;

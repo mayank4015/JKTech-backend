@@ -101,4 +101,9 @@ export class QAController {
     }
     return this.qaService.searchDocuments(req.user.sub, query, limit);
   }
+
+  @Get('stats')
+  async getStats(@Request() req: any) {
+    return this.qaService.getStats(req.user.sub);
+  }
 }
