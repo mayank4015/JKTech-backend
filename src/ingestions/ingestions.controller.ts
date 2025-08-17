@@ -23,6 +23,7 @@ import { CreateIngestionDto, IngestionFiltersDto } from './dto';
 
 @Controller('ingestions')
 @UseGuards(JwtAuthGuard, RoleGuard)
+@Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can access ingestions
 export class IngestionsController {
   constructor(private readonly ingestionsService: IngestionsService) {}
 

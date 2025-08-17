@@ -33,6 +33,7 @@ import {
 @Controller('documents')
 @UseGuards(JwtAuthGuard, RoleGuard)
 @UseInterceptors(ResponseSanitizerInterceptor)
+@Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can access documents
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
