@@ -1,6 +1,6 @@
 # JKTech Backend API
 
-A production-ready NestJS backend application with TypeScript, Prisma ORM, PostgreSQL, comprehensive logging, authentication, and enterprise-grade architecture patterns.
+A production-ready NestJS backend application for the JKTech document processing and Q&A system. Built with TypeScript, Prisma ORM, PostgreSQL, comprehensive logging, authentication, and enterprise-grade architecture patterns.
 
 ## Features
 
@@ -8,64 +8,79 @@ A production-ready NestJS backend application with TypeScript, Prisma ORM, Postg
 - **Database**: PostgreSQL with Prisma ORM 6.x
 - **Authentication**: JWT with Passport and cookie-based sessions
 - **Logging**: Winston with structured logging and daily rotation
-- **Validation**: class-validator and class-transformer
+- **Validation**: class-validator and class-transformer with Zod
 - **Rate Limiting**: @nestjs/throttler with proxy support
 - **File Upload**: Supabase Storage integration
-- **Testing**: Jest with e2e testing setup
-- **Code Quality**: ESLint + Prettier
-- **Security**: CORS, helmet, rate limiting, input validation
+- **Queue Management**: Bull Queue with Redis for background processing
+- **Testing**: Jest with e2e testing setup and 80% coverage threshold
+- **Code Quality**: ESLint + Prettier with strict TypeScript configuration
+- **Security**: CORS, helmet, rate limiting, input validation, and sanitization
+- **Microservices**: Integration with processing service for document handling
+- **Health Checks**: Comprehensive health monitoring for database and external services
 
 ## Project Structure
 
 ```
 src/
-├── app.controller.ts
-├── app.module.ts
-├── app.service.ts
-├── main.ts
-├── auth/                    # Authentication module
-├── common/                  # Shared utilities and services
-│   ├── access-control/      # Role-based access control
-│   ├── file-upload/         # File upload service
-│   ├── filters/             # Global exception filters
-│   ├── interceptors/        # Global interceptors
-│   ├── logger/              # Winston logger service
-│   ├── middleware/          # Custom middleware
-│   ├── pipes/               # Validation pipes
-│   ├── prisma/              # Database service
-│   ├── providers/           # Async storage provider
-│   ├── rate-limit/          # Rate limiting
-│   ├── supabase/            # Supabase integration
-│   └── utils/               # Utility functions
-├── config/                  # Configuration service
-└── health/                  # Health check endpoints
+├── app.controller.ts        # Main application controller
+├── app.module.ts           # Root application module
+├── app.service.ts          # Main application service
+├── main.ts                 # Application entry point
+├── auth/                   # Authentication & authorization
+├── common/                 # Shared utilities and services
+│   ├── access-control/     # Role-based access control (RBAC)
+│   ├── file-upload/        # File upload service with Supabase
+│   ├── filters/            # Global exception filters
+│   ├── interceptors/       # Global interceptors (logging, transform)
+│   ├── logger/             # Winston logger service
+│   ├── middleware/         # Custom middleware (request ID, context)
+│   ├── pipes/              # Validation pipes
+│   ├── prisma/             # Database service and client
+│   ├── providers/          # Async storage provider
+│   ├── rate-limit/         # Rate limiting configuration
+│   ├── supabase/           # Supabase integration
+│   └── utils/              # Utility functions
+├── config/                 # Configuration service
+├── documents/              # Document management module
+├── health/                 # Health check endpoints
+├── ingestions/             # Document ingestion processing
+├── performance/            # Performance monitoring
+├── processing/             # Processing service integration
+├── qa/                     # Question & Answer module
+├── sanitization/           # Input sanitization
+└── users/                  # User management module
 ```
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 20.x or higher
-- PostgreSQL 14.x or higher
-- npm or yarn
+- **Node.js**: 20.x or higher
+- **PostgreSQL**: 14.x or higher
+- **Redis**: 6.x or higher (for Bull Queue)
+- **Package Manager**: npm or yarn
+- **Supabase Account**: For file storage (optional but recommended)
 
 ### Installation
 
 1. Clone the repository and navigate to the backend directory:
+
    ```bash
    cd JKTech-backend
    ```
 
 2. Install dependencies:
+
    ```bash
    npm install
    ```
 
 3. Set up environment variables:
+
    ```bash
    cp .env.example .env
    ```
-   
+
    Edit `.env` with your configuration:
    - Database connection string
    - JWT secret
@@ -73,13 +88,14 @@ src/
    - Other service configurations
 
 4. Set up the database:
+
    ```bash
    # Generate Prisma client
    npm run prisma:generate
-   
+
    # Run database migrations
    npm run prisma:migrate
-   
+
    # Seed the database (optional)
    npm run prisma:seed
    ```
@@ -87,6 +103,7 @@ src/
 ### Development
 
 Start the development server:
+
 ```bash
 npm run start:dev
 ```
@@ -121,17 +138,50 @@ The API will be available at `http://localhost:8080`
 
 ### Public Endpoints
 
-- `GET /` - API status
-- `GET /health` - Health check
-- `GET /health/database` - Database health check
-- `GET /health/storage` - Storage health check
-- `POST /auth/login` - User login
+- `GET /` - API status and information
+- `GET /health` - Overall health check
+- `GET /health/database` - Database connectivity check
+- `GET /health/storage` - Supabase storage health check
+- `POST /auth/login` - User authentication
 - `POST /auth/register` - User registration
 
 ### Protected Endpoints
 
+#### Authentication
+
 - `POST /auth/logout` - User logout
-- `POST /auth/profile` - Get user profile
+- `GET /auth/profile` - Get current user profile
+- `PUT /auth/profile` - Update user profile
+
+#### Documents
+
+- `GET /documents` - List user documents
+- `POST /documents` - Upload new document
+- `GET /documents/:id` - Get document details
+- `PUT /documents/:id` - Update document metadata
+- `DELETE /documents/:id` - Delete document
+
+#### Ingestions
+
+- `GET /ingestions` - List processing jobs
+- `POST /ingestions` - Start document processing
+- `GET /ingestions/:id` - Get processing status
+- `DELETE /ingestions/:id` - Cancel processing job
+
+#### Q&A System
+
+- `GET /conversations` - List user conversations
+- `POST /conversations` - Create new conversation
+- `GET /conversations/:id` - Get conversation details
+- `POST /conversations/:id/questions` - Ask question
+- `GET /qa/saved` - Get saved Q&As
+- `POST /qa/save` - Save Q&A pair
+
+#### Users (Admin only)
+
+- `GET /users` - List all users
+- `PUT /users/:id/role` - Update user role
+- `PUT /users/:id/status` - Activate/deactivate user
 
 ## Authentication
 
@@ -169,6 +219,7 @@ The application uses Winston for structured logging with:
 - Trace logging for debugging
 
 Log files (production):
+
 - `logs/application-YYYY-MM-DD.log` - Application logs
 - `logs/error-YYYY-MM-DD.log` - Error logs
 - `logs/trace-YYYY-MM-DD.log` - Trace logs
@@ -205,6 +256,7 @@ docker run -p 8080:8080 --env-file .env jktech-backend
 ### Production
 
 1. Build the application:
+
    ```bash
    npm run build
    ```
@@ -212,6 +264,7 @@ docker run -p 8080:8080 --env-file .env jktech-backend
 2. Set production environment variables
 
 3. Run database migrations:
+
    ```bash
    npm run prisma:deploy
    ```
