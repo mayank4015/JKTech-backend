@@ -25,8 +25,9 @@ export class AccessControlService {
     {
       role: Role.EDITOR,
       permissions: [
-        { resource: 'users', action: 'read' },
         { resource: 'documents', action: '*' },
+        { resource: 'ingestions', action: '*' },
+        { resource: 'qa', action: '*' },
         { resource: 'profile', action: 'read' },
         { resource: 'profile', action: 'update' },
       ],
@@ -34,7 +35,7 @@ export class AccessControlService {
     {
       role: Role.VIEWER,
       permissions: [
-        { resource: 'documents', action: 'read' },
+        { resource: 'qa', action: '*' },
         { resource: 'profile', action: 'read' },
         { resource: 'profile', action: 'update' },
       ],

@@ -20,7 +20,7 @@ export class QAService {
     private readonly conversationService: ConversationService,
   ) {}
 
-  async askQuestion(userId: string, dto: AskQuestionDto) {
+  async askQuestion(userId: string, userRole: string, dto: AskQuestionDto) {
     let conversationId = dto.conversationId;
 
     // Create new conversation if not provided
@@ -43,7 +43,11 @@ export class QAService {
     });
 
     // Generate answer using RAG
-    const ragResult = await this.ragService.generateAnswer(dto.text, userId);
+    const ragResult = await this.ragService.generateAnswer(
+      dto.text,
+      userId,
+      userRole,
+    );
 
     // Save the answer
     const answer = await this.prisma.answer.create({
@@ -252,21 +256,33 @@ export class QAService {
     });
   }
 
-  async searchDocuments(userId: string, query: string, limit: number = 10) {
+  async searchDocuments(
+    userId: string,
+    userRole: string,
+    query: string,
+    limit: number = 10,
+  ) {
     // Use the enhanced search from IngestionService
     const searchResults = await this.ingestionsService.searchProcessedContent(
       query,
       userId,
+      userRole,
       limit,
     );
 
     // Get document details for each result
     const documentIds = searchResults.map((result) => result.documentId);
+
+    // Build document filter based on user role
+    const documentWhere: any = {
+      id: { in: documentIds },
+    };
+
+    // For Q&A purposes, all users (admin, editor, viewer) can search all processed documents
+    // No additional restrictions needed - if a document has been processed, it's searchable
+
     const documents = await this.prisma.document.findMany({
-      where: {
-        id: { in: documentIds },
-        uploadedBy: userId,
-      },
+      where: documentWhere,
       select: {
         id: true,
         title: true,

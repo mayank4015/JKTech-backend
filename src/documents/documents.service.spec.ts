@@ -695,7 +695,7 @@ describe('DocumentsService', () => {
 
         // Assert
         expect(prismaService.document.findMany).toHaveBeenCalledWith({
-          where: { uploadedBy: mockUserId },
+          where: {}, // FIX: No uploadedBy filter for non-admin users
           skip: 0,
           take: 10,
           orderBy: { createdAt: 'desc' },

@@ -37,6 +37,7 @@ export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
   @Post('upload')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can upload
   @UseInterceptors(FileInterceptor('file'))
   @HttpCode(HttpStatus.CREATED)
   async uploadDocument(
@@ -117,6 +118,7 @@ export class DocumentsController {
   }
 
   @Patch(':id')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can update
   async updateDocument(
     @Param('id') id: string,
     @Body() updateDocumentDto: UpdateDocumentDto,
@@ -137,6 +139,7 @@ export class DocumentsController {
   }
 
   @Delete(':id')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can delete
   @HttpCode(HttpStatus.OK)
   async deleteDocument(@Param('id') id: string, @GetUser() user: User) {
     await this.documentsService.deleteDocument(id, user.id, user.role);
@@ -148,6 +151,7 @@ export class DocumentsController {
   }
 
   @Post(':id/reprocess')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can reprocess
   async reprocessDocument(@Param('id') id: string, @GetUser() user: User) {
     const result = await this.documentsService.reprocessDocument(
       id,

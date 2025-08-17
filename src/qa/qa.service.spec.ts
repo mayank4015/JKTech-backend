@@ -136,7 +136,9 @@ describe('QAService', () => {
       mockRAGService.generateAnswer.mockResolvedValue(mockRAGResult);
       mockPrismaService.answer.create.mockResolvedValue(mockAnswer);
 
-      const result = await service.askQuestion(userId, { text: questionText });
+      const result = await service.askQuestion(userId, 'admin', {
+        text: questionText,
+      });
 
       expect(mockConversationService.createConversation).toHaveBeenCalledWith(
         userId,
@@ -153,6 +155,7 @@ describe('QAService', () => {
       expect(mockRAGService.generateAnswer).toHaveBeenCalledWith(
         questionText,
         userId,
+        'admin',
       );
       expect(mockPrismaService.answer.create).toHaveBeenCalled();
       expect(result.conversationId).toBe('conv-id');
@@ -185,7 +188,7 @@ describe('QAService', () => {
       mockRAGService.generateAnswer.mockResolvedValue(mockRAGResult);
       mockPrismaService.answer.create.mockResolvedValue(mockAnswer);
 
-      const result = await service.askQuestion(userId, {
+      const result = await service.askQuestion(userId, 'admin', {
         text: questionText,
         conversationId,
       });
@@ -309,17 +312,22 @@ describe('QAService', () => {
         mockProcessedContentMap,
       );
 
-      const result = await service.searchDocuments(userId, query, limit);
+      const result = await service.searchDocuments(
+        userId,
+        'admin',
+        query,
+        limit,
+      );
 
       expect(mockIngestionsService.searchProcessedContent).toHaveBeenCalledWith(
         query,
         userId,
+        'admin',
         limit,
       );
       expect(mockPrismaService.document.findMany).toHaveBeenCalledWith({
         where: {
           id: { in: ['doc-1', 'doc-2'] },
-          uploadedBy: userId,
         },
         select: {
           id: true,
@@ -363,7 +371,12 @@ describe('QAService', () => {
         new Map(),
       );
 
-      const result = await service.searchDocuments(userId, query, limit);
+      const result = await service.searchDocuments(
+        userId,
+        'admin',
+        query,
+        limit,
+      );
 
       expect(result.sources).toHaveLength(0);
       expect(result.total).toBe(0);
@@ -415,7 +428,7 @@ describe('QAService', () => {
         mockProcessedContentMap,
       );
 
-      const result = await service.searchDocuments(userId, query);
+      const result = await service.searchDocuments(userId, 'admin', query);
 
       expect(result.sources).toHaveLength(1);
       expect(result.sources[0]?.documentId).toBe('doc-1');

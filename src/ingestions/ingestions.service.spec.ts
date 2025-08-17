@@ -270,11 +270,15 @@ describe('IngestionsService - QA Integration', () => {
 
       mockPrismaService.ingestion.findMany.mockResolvedValue(mockIngestions);
 
-      const result = await service.searchProcessedContent(query, userId, limit);
+      const result = await service.searchProcessedContent(
+        query,
+        userId,
+        'admin',
+        limit,
+      );
 
       expect(mockPrismaService.ingestion.findMany).toHaveBeenCalledWith({
         where: {
-          userId,
           status: IngestionStatus.COMPLETED,
         },
         include: {
@@ -351,7 +355,11 @@ describe('IngestionsService - QA Integration', () => {
 
       mockPrismaService.ingestion.findMany.mockResolvedValue(mockIngestions);
 
-      const result = await service.searchProcessedContent(query, userId);
+      const result = await service.searchProcessedContent(
+        query,
+        userId,
+        'admin',
+      );
 
       expect(result).toHaveLength(2);
 
@@ -393,7 +401,11 @@ describe('IngestionsService - QA Integration', () => {
 
       mockPrismaService.ingestion.findMany.mockResolvedValue(mockIngestions);
 
-      const result = await service.searchProcessedContent(query, userId);
+      const result = await service.searchProcessedContent(
+        query,
+        userId,
+        'admin',
+      );
 
       expect(result).toHaveLength(1);
       expect(result[0].matchType).toBe('keywords');
@@ -425,7 +437,12 @@ describe('IngestionsService - QA Integration', () => {
 
       mockPrismaService.ingestion.findMany.mockResolvedValue(mockIngestions);
 
-      const result = await service.searchProcessedContent(query, userId, limit);
+      const result = await service.searchProcessedContent(
+        query,
+        userId,
+        'admin',
+        limit,
+      );
 
       expect(result).toHaveLength(limit);
     });
@@ -456,7 +473,11 @@ describe('IngestionsService - QA Integration', () => {
 
       mockPrismaService.ingestion.findMany.mockResolvedValue(mockIngestions);
 
-      const result = await service.searchProcessedContent(query, userId);
+      const result = await service.searchProcessedContent(
+        query,
+        userId,
+        'admin',
+      );
 
       expect(result).toHaveLength(0);
     });

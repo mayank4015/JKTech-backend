@@ -16,6 +16,7 @@ export class DocumentSearchService {
     query: string,
     limit: number = 5,
     userId?: string,
+    userRole?: string,
   ): Promise<DocumentSource[]> {
     try {
       // If userId is provided, use the enhanced search from IngestionService
@@ -24,6 +25,7 @@ export class DocumentSearchService {
           await this.ingestionsService.searchProcessedContent(
             query,
             userId,
+            userRole || 'viewer', // Default to viewer if role not provided
             limit,
           );
 
