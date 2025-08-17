@@ -187,9 +187,7 @@ export class DocumentsService {
     }
 
     // Role-based access control
-    if (userRole !== 'admin') {
-      where.uploadedBy = userId;
-    }
+    // FIX: Allow all users to see all documents for ingestion
 
     // Build order by clause
     const orderBy: Prisma.DocumentOrderByWithRelationInput = {};
