@@ -76,6 +76,7 @@ describe('DocumentSearchService', () => {
       expect(mockIngestionsService.searchProcessedContent).toHaveBeenCalledWith(
         query,
         userId,
+        'viewer',
         limit,
       );
       expect(result).toHaveLength(1);

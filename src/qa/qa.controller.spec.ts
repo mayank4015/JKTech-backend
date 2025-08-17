@@ -92,6 +92,7 @@ describe('QAController', () => {
 
       expect(qaService.askQuestion).toHaveBeenCalledWith(
         mockUser.id,
+        mockUser.role,
         askQuestionDto,
       );
       expect(result).toEqual(mockResult);
@@ -418,6 +419,7 @@ describe('QAController', () => {
 
       expect(qaService.searchDocuments).toHaveBeenCalledWith(
         mockUser.id,
+        mockUser.role,
         query,
         limit,
       );

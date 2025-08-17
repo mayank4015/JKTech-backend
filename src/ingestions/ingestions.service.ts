@@ -812,6 +812,7 @@ export class IngestionsService {
   async searchProcessedContent(
     query: string,
     userId: string,
+    userRole: string,
     limit: number = 10,
   ): Promise<
     Array<{
@@ -821,12 +822,17 @@ export class IngestionsService {
       matchType: 'title' | 'content' | 'summary' | 'keywords';
     }>
   > {
-    // Get user's completed ingestions
+    // Build ingestion filter based on user role
+    const ingestionWhere: any = {
+      status: IngestionStatus.COMPLETED,
+    };
+
+    // For Q&A purposes, all users (admin, editor, viewer) can search all completed ingestions
+    // This allows everyone to ask questions about any successfully processed document
+
+    // Get completed ingestions based on role
     const ingestions = await this.prisma.ingestion.findMany({
-      where: {
-        userId,
-        status: IngestionStatus.COMPLETED,
-      },
+      where: ingestionWhere,
       include: {
         document: {
           select: {

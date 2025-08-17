@@ -28,7 +28,7 @@ export class QAController {
 
   @Post('ask')
   async askQuestion(@Request() req: any, @Body() dto: AskQuestionDto) {
-    return this.qaService.askQuestion(req.user.id, dto);
+    return this.qaService.askQuestion(req.user.id, req.user.role, dto);
   }
 
   @Post('conversations')
@@ -99,7 +99,12 @@ export class QAController {
     if (!query) {
       return { sources: [], message: 'Query parameter is required' };
     }
-    return this.qaService.searchDocuments(req.user.id, query, limit);
+    return this.qaService.searchDocuments(
+      req.user.id,
+      req.user.role,
+      query,
+      limit,
+    );
   }
 
   @Get('stats')

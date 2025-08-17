@@ -23,11 +23,11 @@ import { CreateIngestionDto, IngestionFiltersDto } from './dto';
 
 @Controller('ingestions')
 @UseGuards(JwtAuthGuard, RoleGuard)
-@Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can access ingestions
 export class IngestionsController {
   constructor(private readonly ingestionsService: IngestionsService) {}
 
   @Post()
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can create ingestions
   @HttpCode(HttpStatus.CREATED)
   async createIngestion(
     @Body() createIngestionDto: CreateIngestionDto,
@@ -46,6 +46,7 @@ export class IngestionsController {
   }
 
   @Get()
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can view ingestions list
   async getIngestions(
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
@@ -88,6 +89,7 @@ export class IngestionsController {
   }
 
   @Get(':id')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can view individual ingestions
   async getIngestionById(
     @Param('id', ParseUUIDPipe) id: string,
     @GetUser() user: User,
@@ -148,6 +150,7 @@ export class IngestionsController {
 
   // Processing endpoints
   @Post(':id/process')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can trigger processing
   @HttpCode(HttpStatus.OK)
   async triggerProcessing(
     @Param('id', ParseUUIDPipe) id: string,
@@ -167,6 +170,7 @@ export class IngestionsController {
   }
 
   @Get(':id/status')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can view processing status
   async getProcessingStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @GetUser() user: User,
@@ -180,6 +184,7 @@ export class IngestionsController {
   }
 
   @Post(':id/cancel')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can cancel processing
   @HttpCode(HttpStatus.OK)
   async cancelProcessing(
     @Param('id', ParseUUIDPipe) id: string,
@@ -200,6 +205,7 @@ export class IngestionsController {
   }
 
   @Post(':id/retry')
+  @Roles(Role.ADMIN, Role.EDITOR) // Only admin and editor can retry processing
   @HttpCode(HttpStatus.OK)
   async retryProcessing(
     @Param('id', ParseUUIDPipe) id: string,
