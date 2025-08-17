@@ -1,10 +1,15 @@
 /**
  * Performance Test Suite
  * Tests critical system components under load to ensure scalability and responsiveness
+ *
+ * To run performance tests specifically:
+ * npm run test:performance
+ *
+ * To run with coverage:
+ * npm run test:performance:cov
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
 import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
 
 import { DocumentsService } from '../documents/documents.service';
@@ -379,8 +384,6 @@ describe('Performance Tests', () => {
     const userPromises = Array.from(
       { length: config.concurrentUsers },
       async () => {
-        const userStartTime = Date.now();
-
         for (
           let requestIndex = 0;
           requestIndex < config.requestsPerUser;
@@ -398,15 +401,13 @@ describe('Performance Tests', () => {
               ),
             ]);
             const requestEndTime = Date.now();
-
-            responseTimes.push(requestEndTime - requestStartTime);
+            const responseTime = requestEndTime - requestStartTime;
+            responseTimes.push(responseTime);
             completedRequests++;
           } catch (error) {
             errors.push(error as Error);
           }
         }
-
-        return Date.now() - userStartTime;
       },
     );
 
@@ -414,21 +415,28 @@ describe('Performance Tests', () => {
     await Promise.allSettled(userPromises);
 
     const endTime = Date.now();
-    const totalDuration = (endTime - startTime) / 1000; // in seconds
+    const totalTime = (endTime - startTime) / 1000; // Convert to seconds
     const totalRequests = config.concurrentUsers * config.requestsPerUser;
 
     // Calculate metrics
+    const averageResponseTime =
+      responseTimes.length > 0
+        ? responseTimes.reduce((sum, time) => sum + time, 0) /
+          responseTimes.length
+        : 0;
+    const minResponseTime =
+      responseTimes.length > 0 ? Math.min(...responseTimes) : 0;
+    const maxResponseTime =
+      responseTimes.length > 0 ? Math.max(...responseTimes) : 0;
+    const throughput = completedRequests / totalTime;
+    const successRate = completedRequests / totalRequests;
+
     const metrics: PerformanceMetrics = {
-      averageResponseTime:
-        responseTimes.length > 0
-          ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
-          : 0,
-      minResponseTime:
-        responseTimes.length > 0 ? Math.min(...responseTimes) : 0,
-      maxResponseTime:
-        responseTimes.length > 0 ? Math.max(...responseTimes) : 0,
-      throughput: completedRequests / totalDuration,
-      successRate: completedRequests / totalRequests,
+      averageResponseTime,
+      minResponseTime,
+      maxResponseTime,
+      throughput,
+      successRate,
       memoryUsage: process.memoryUsage(),
     };
 
@@ -437,157 +445,24 @@ describe('Performance Tests', () => {
     console.log(
       `   ✅ Completed Requests: ${completedRequests}/${totalRequests}`,
     );
+    console.log(`   ⚡ Success Rate: ${(successRate * 100).toFixed(2)}%`);
     console.log(
-      `   📈 Success Rate: ${(metrics.successRate * 100).toFixed(2)}%`,
+      `   ⏱️  Average Response Time: ${averageResponseTime.toFixed(2)}ms`,
     );
-    console.log(
-      `   ⚡ Throughput: ${metrics.throughput.toFixed(2)} requests/second`,
-    );
-    console.log(
-      `   ⏱️  Average Response Time: ${metrics.averageResponseTime.toFixed(2)}ms`,
-    );
-    console.log(`   🏃 Min Response Time: ${metrics.minResponseTime}ms`);
-    console.log(`   🐌 Max Response Time: ${metrics.maxResponseTime}ms`);
-    console.log(
-      `   💾 Memory Usage: ${(metrics.memoryUsage!.heapUsed / 1024 / 1024).toFixed(2)}MB`,
-    );
+    console.log(`   🚀 Throughput: ${throughput.toFixed(2)} requests/second`);
+    console.log(`   ❌ Errors: ${errors.length}`);
 
     if (errors.length > 0) {
-      console.log(`   ❌ Errors: ${errors.length}`);
-      console.log(`   🔍 Sample Error: ${errors[0]?.message}`);
+      console.log(`   🔍 Error Details: ${errors[0].message}`);
     }
 
     return metrics;
   }
 
   function setupCommonMocks() {
-    // Setup common mock responses that will be used across tests
-
-    // Mock logger to avoid noise in test output
-    loggerService.debug.mockImplementation(() => {});
+    // Setup any common mock behaviors here
     loggerService.log.mockImplementation(() => {});
-    loggerService.warn.mockImplementation(() => {});
     loggerService.error.mockImplementation(() => {});
-
-    // Mock file upload service
-    fileUploadService.uploadFile.mockResolvedValue({
-      fileName: 'test-file.pdf',
-      url: 'https://storage.example.com/test-file.pdf',
-      mimeType: 'application/pdf',
-      fileSize: 1024000,
-    });
+    loggerService.warn.mockImplementation(() => {});
   }
 });
-
-/**
- * Performance Test Utilities
- * Additional helper functions for performance testing
- */
-export class PerformanceTestUtils {
-  /**
-   * Measures the execution time of a function
-   */
-  static async measureExecutionTime<T>(
-    operation: () => Promise<T>,
-  ): Promise<{ result: T; executionTime: number }> {
-    const startTime = process.hrtime.bigint();
-    const result = await operation();
-    const endTime = process.hrtime.bigint();
-    const executionTime = Number(endTime - startTime) / 1_000_000; // Convert to milliseconds
-
-    return { result, executionTime };
-  }
-
-  /**
-   * Runs a stress test by gradually increasing load
-   */
-  static async runStressTest(
-    operation: () => Promise<any>,
-    maxConcurrency: number = 100,
-    stepSize: number = 10,
-  ): Promise<{ breakingPoint: number; metrics: PerformanceMetrics[] }> {
-    const metrics: PerformanceMetrics[] = [];
-    let breakingPoint = maxConcurrency;
-
-    for (
-      let concurrency = stepSize;
-      concurrency <= maxConcurrency;
-      concurrency += stepSize
-    ) {
-      console.log(`\n🔄 Testing with ${concurrency} concurrent operations...`);
-
-      const startTime = Date.now();
-      const promises = Array.from({ length: concurrency }, () => operation());
-
-      try {
-        const results = await Promise.allSettled(promises);
-        const endTime = Date.now();
-        const duration = (endTime - startTime) / 1000;
-
-        const successful = results.filter(
-          (r) => r.status === 'fulfilled',
-        ).length;
-
-        const stepMetrics: PerformanceMetrics = {
-          averageResponseTime: (duration * 1000) / concurrency,
-          minResponseTime: 0,
-          maxResponseTime: duration * 1000,
-          throughput: successful / duration,
-          successRate: successful / concurrency,
-        };
-
-        metrics.push(stepMetrics);
-
-        console.log(
-          `   Success Rate: ${(stepMetrics.successRate * 100).toFixed(2)}%`,
-        );
-        console.log(
-          `   Throughput: ${stepMetrics.throughput.toFixed(2)} ops/sec`,
-        );
-
-        // If success rate drops below 90%, we've found the breaking point
-        if (stepMetrics.successRate < 0.9) {
-          breakingPoint = concurrency - stepSize;
-          console.log(
-            `\n💥 Breaking point detected at ${breakingPoint} concurrent operations`,
-          );
-          break;
-        }
-
-        // Wait between steps
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } catch (error) {
-        console.error(
-          `❌ Failed at ${concurrency} concurrent operations:`,
-          error,
-        );
-        breakingPoint = concurrency - stepSize;
-        break;
-      }
-    }
-
-    return { breakingPoint, metrics };
-  }
-
-  /**
-   * Monitors memory usage during operation
-   */
-  static async monitorMemoryUsage<T>(
-    operation: () => Promise<T>,
-    intervalMs: number = 100,
-  ): Promise<{ result: T; memorySnapshots: NodeJS.MemoryUsage[] }> {
-    const memorySnapshots: NodeJS.MemoryUsage[] = [];
-
-    // Start memory monitoring
-    const monitoringInterval = setInterval(() => {
-      memorySnapshots.push(process.memoryUsage());
-    }, intervalMs);
-
-    try {
-      const result = await operation();
-      return { result, memorySnapshots };
-    } finally {
-      clearInterval(monitoringInterval);
-    }
-  }
-}

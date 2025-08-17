@@ -32,7 +32,7 @@ export class UsersController {
   }
 
   @Get()
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.EDITOR)
   async getUsers(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
